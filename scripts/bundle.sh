@@ -1,11 +1,13 @@
 #!/bin/bash
-# Builds release binaries with eyebuild and assembles dist/AIStats.app (ad-hoc signed).
+# Builds release binaries and assembles dist/AIStats.app (ad-hoc signed).
+# Uses eyebuild when it is installed (build caches off the internal disk), else plain `swift build`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
-eyebuild swift release -- build -c release --product AIStatsMenu
-eyebuild swift release -- build -c release --product aistats
-BIN=$(eyebuild swift release -- build -c release --show-bin-path | tail -1)
+if command -v eyebuild >/dev/null 2>&1; then SWIFT=(eyebuild swift release --); else SWIFT=(swift); fi
+"${SWIFT[@]}" build -c release --product AIStatsMenu
+"${SWIFT[@]}" build -c release --product aistats
+BIN=$("${SWIFT[@]}" build -c release --show-bin-path | tail -1)
 
 APP="$ROOT/dist/AIStats.app"
 # Assemble next to the old app, then swap it in with one rename: agents registered with

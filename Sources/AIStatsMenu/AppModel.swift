@@ -33,6 +33,8 @@ final class AppModel: ObservableObject {
         var busy = false
         var message: String?
         var messageIsError = false
+        /// The registrar's own (English) wording, shown on hover; also what `aistats install` prints.
+        var messageDetail: String?
     }
 
     private let sampler = SystemSampler(slowMetricsInterval: AppModel.slowMetricsInterval)
@@ -209,6 +211,7 @@ final class AppModel: ObservableObject {
         var row = registrations[target] ?? AgentRow()
         row.busy = true
         row.message = nil
+        row.messageDetail = nil
         registrations[target] = row
         registrationQueue.async { [weak self, registrar] in
             let outcome: RegistrationOutcome
@@ -226,6 +229,7 @@ final class AppModel: ObservableObject {
                 row.fingerprint = outcome.status.entryFingerprint
                 row.messageIsError = !outcome.ok
                 row.message = Self.message(for: outcome)
+                row.messageDetail = outcome.ok ? nil : outcome.message
                 self.registrations[target] = row
             }
         }
@@ -233,17 +237,18 @@ final class AppModel: ObservableObject {
 
     nonisolated static func message(for o: RegistrationOutcome) -> String {
         guard o.ok else {
-            // Once a change was attempted (a backup exists), the registrar's own words say what the entry is
-            // now; a summary like "left unchanged" could be wrong.
-            if let backup = o.backup {
-                let note = o.message.contains(backup) ? "" : " · 백업: \((backup as NSString).abbreviatingWithTildeInPath)"
-                return "실패: \(o.message)\(note)"
+            let backup = o.backup.map { " · 백업: \(($0 as NSString).abbreviatingWithTildeInPath)" } ?? ""
+            // A change was attempted (a backup exists) or may have been: report the state read back afterwards,
+            // not a guess like "left unchanged". The registrar's exact words are in the row's tooltip.
+            if o.backup == nil {
+                switch o.status.state {
+                case .agentNotFound: return "\(o.target.displayName)을(를) 찾지 못했습니다"
+                case .nameConflict: return "다른 aistats 항목이 있어 바꾸지 않았습니다"
+                case .checkFailed: return "설정을 읽지 못해 바꾸지 않았습니다"
+                default: break
+                }
             }
-            switch o.status.state {
-            case .agentNotFound: return "\(o.target.displayName)을(를) 찾지 못했습니다"
-            case .nameConflict: return "다른 aistats 항목이 있어 바꾸지 않았습니다"
-            default: return "실패: \(o.message)"
-            }
+            return "실패 · 지금 상태: \(stateLabel(o.status.state))\(backup)"
         }
         let backup = o.backup.map { " · 백업: \(($0 as NSString).abbreviatingWithTildeInPath)" } ?? ""
         switch o.action {
@@ -255,6 +260,18 @@ final class AppModel: ObservableObject {
             return o.target == .claudeDesktop ? "연결 해제됨 · Claude Desktop을 다시 시작하세요" : "연결 해제됨"
         default:
             return o.message
+        }
+    }
+
+    /// Korean label for a registration state (the row's status text and failure summaries).
+    nonisolated static func stateLabel(_ state: RegistrationState) -> String {
+        switch state {
+        case .notInstalled: return "연결 안 됨"
+        case .installed: return "등록됨"
+        case .pathUpdateNeeded: return "경로 바뀜"
+        case .nameConflict: return "다른 aistats 항목 있음"
+        case .checkFailed: return "확인 실패"
+        case .agentNotFound: return "설치 안 됨"
         }
     }
 

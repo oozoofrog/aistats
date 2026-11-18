@@ -296,6 +296,7 @@ private struct AgentRowView: View {
                     .foregroundStyle(row.messageIsError ? Color.orange : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+                    .help(row.messageDetail ?? "")
                     .padding(.leading, 13)
             }
         }
@@ -328,15 +329,8 @@ private struct AgentRowView: View {
     private var stateText: String {
         let n = model.sessionCount(target)
         let sessions = n > 0 ? " · 세션 \(n)개" : ""
-        switch row.state {
-        case nil: return "확인 중…"
-        case .notInstalled?: return "연결 안 됨" + sessions
-        case .installed?: return "등록됨" + sessions
-        case .pathUpdateNeeded?: return "경로 바뀜" + sessions
-        case .nameConflict?: return "다른 aistats 항목 있음" + sessions
-        case .checkFailed?: return "확인 실패" + sessions
-        case .agentNotFound?: return "설치 안 됨" + sessions
-        }
+        guard let state = row.state else { return "확인 중…" }
+        return AppModel.stateLabel(state) + sessions
     }
 
     private var dotColor: Color {
