@@ -60,3 +60,7 @@ aistats top --sort memory --limit 10
 aistats track --name Xcode --children --duration 60 --spike-cpu 200
 aistats --help
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
