@@ -10,6 +10,8 @@ public enum WaitCondition: Sendable {
     }
     case cpuIdle(Scope, belowPercent: Double)
     case processExit(pid: Int32, startToken: String?)
+    case processStarted(ProcessSelector, newOnly: Bool)
+    case diskFree(path: String, bytes: UInt64)
     case portListening(UInt16)
     case memoryPressureNormal
 
@@ -17,10 +19,20 @@ public enum WaitCondition: Sendable {
         switch self {
         case .cpuIdle: return "cpu_idle"
         case .processExit: return "process_exit"
+        case .processStarted: return "process_started"
+        case .diskFree: return "disk_free_above"
         case .portListening: return "port_listening"
         case .memoryPressureNormal: return "memory_pressure_normal"
         }
     }
+    public var minimumTimeout: Double {
+        switch self {
+        case .cpuIdle: return 2.5
+        case .memoryPressureNormal: return 1.5
+        default: return 1
+        }
+    }
+
 }
 
 public struct WaitResult: Codable, Sendable {
@@ -29,6 +41,8 @@ public struct WaitResult: Codable, Sendable {
         /// cpu_idle: system-wide percent of all cores, or percent of one core summed over the processes.
         public var cpuPercent: Double?
         public var memoryPressure: String?
+        public var diskAvailableBytes: UInt64?
+        public var diskAvailableForImportantUsageBytes: UInt64?
         public var portListening: Bool?
         public var processAlive: Bool?
         public var valid: Bool
@@ -47,6 +61,8 @@ public struct WaitResult: Codable, Sendable {
     public var state: String
     public var condition: String
     public var scope: String?
+    public var mountPath: String?
+    public var thresholdBytes: UInt64?
     public var thresholdPercent: Double?
     public var elapsedSeconds: Double
     public var timeoutSeconds: Double
@@ -110,7 +126,9 @@ public final class Waiter: @unchecked Sendable {
     private var pidKey: Proc.Key?
     /// cpu_idle on a group: whether any process ever matched.
     private var everMatched = false
-    private var portResult: FindResult?
+    private var initialMatches: Set<Proc.Key>?
+    private var observedMount: String?
+    private var processResult: FindResult?
     private var exitKey: Proc.Key?
 
     public init(condition: WaitCondition, timeout: TimeInterval, tracks: TrackManager? = nil) {
@@ -131,12 +149,15 @@ public final class Waiter: @unchecked Sendable {
                 finish("unavailable", reason: why)
                 return
             }
-            if case .portListening = condition {
+            switch condition {
+            case .memoryPressureNormal, .diskFree, .processStarted, .portListening:
                 tick()
                 guard self.completion != nil else { return }
+            default: break
             }
             let period: DispatchTimeInterval
             if let p = tickPeriod { period = .milliseconds(Int(p * 1000)) }
+            else if case .processStarted = condition { period = .milliseconds(450) }
             else if case .portListening = condition { period = .milliseconds(450) }
             else if case .processExit = condition { period = .milliseconds(250) } else { period = .seconds(1) }
             let t = DispatchSource.makeTimerSource(queue: queue)
@@ -194,7 +215,7 @@ public final class Waiter: @unchecked Sendable {
             if let token, token != String(u.start) { return "pid \(pid) was reused: startToken differs, the original process already exited" }
             exitKey = Proc.Key(pid: pid, start: u.start)
             return nil
-        case .memoryPressureNormal, .portListening:
+        case .memoryPressureNormal, .processStarted, .diskFree, .portListening:
             return nil
         case .cpuIdle(let scope, _):
             switch scope {
@@ -229,7 +250,7 @@ public final class Waiter: @unchecked Sendable {
         if obs.satisfied && obs.observation.valid { consecutive += 1 } else { consecutive = 0 }
         let needed: Int
         switch condition {
-        case .processExit, .portListening: needed = 1
+        case .processExit, .processStarted, .diskFree, .portListening: needed = 1
         default: needed = Self.requiredConsecutive
         }
         if consecutive >= needed {
@@ -248,7 +269,7 @@ public final class Waiter: @unchecked Sendable {
             }
         }
         if case .portListening = condition {
-            finish("timed_out", reason: portResult?.note ?? PortLookup.visibilityNote)
+            finish("timed_out", reason: processResult?.note ?? PortLookup.visibilityNote)
             return
         }
         finish("timed_out", reason: last?.valid == false ? invalidReason : nil)
@@ -263,9 +284,38 @@ public final class Waiter: @unchecked Sendable {
 
     private func observe(now: UInt64) -> Observed {
         switch condition {
+        case .diskFree(let path, let threshold):
+            guard let disk = SystemSampler.readDisk(at: path) else {
+                return Observed(observation: .init(at: Date(), valid: false), satisfied: false, ended: "Volume could not be read")
+            }
+            observedMount = disk.mountPath
+            return Observed(observation: .init(at: Date(), diskAvailableBytes: disk.availableBytes,
+                                               diskAvailableForImportantUsageBytes: disk.availableForImportantUsageBytes, valid: true),
+                            satisfied: disk.availableBytes >= threshold)
+        case .processStarted(let selector, let newOnly):
+            guard let entries = directory.scan(refreshPath: selector.pathRefreshFilter) else {
+                return Observed(observation: .init(at: Date(), valid: false), satisfied: false, ended: "Process table unavailable")
+            }
+            let selected = directory.select(entries, selector)
+            for row in selected.argsUnreadable { argsUnreadable.insert(row.pid) }
+            var matches = FindResult(observedAt: Date(), scope: "current_user", selector: selector.kind,
+                                     processes: [], matched: 0, truncated: false)
+            var observed = Set<Proc.Key>()
+            for entry in selected.rows {
+                let row = ProcessFinder.read(pid: entry.pid, ppid: entry.ppid, name: entry.name, path: nil)
+                guard let token = row.startToken, let start = UInt64(token), entry.isCurrentInstance else { continue }
+                let key = Proc.Key(pid: entry.pid, start: start)
+                observed.insert(key)
+                if newOnly && (initialMatches?.contains(key) ?? true) { continue }
+                matches.matched += 1
+                if matches.processes.count < 5 { matches.processes.append(row) }
+            }
+            if newOnly && initialMatches == nil { initialMatches = observed }
+            processResult = matches
+            return Observed(observation: .init(at: Date(), valid: true), satisfied: matches.matched > 0)
         case .portListening(let port):
             let result = PortLookup.find(port, limit: ProcessFinder.maxLimit)
-            portResult = result
+            processResult = result
             let listening = result.matched > 0
             return Observed(observation: .init(at: Date(), portListening: listening, valid: result.scanAvailable == true), satisfied: listening)
         case .processExit:
@@ -394,9 +444,16 @@ public final class Waiter: @unchecked Sendable {
             result.culprits = culprits(scope: scope, elapsed: elapsed)
         }
         if case .cpuIdle(.selector(let selector), _) = condition, selector.argsContain != nil { result.argsUnreadable = argsUnreadable.count }
-        if state == "met", let portResult {
-            result.processes = portResult.processes
-            result.matched = portResult.matched
+        if case .processStarted(let selector, _) = condition, selector.argsContain != nil {
+            result.argsUnreadable = argsUnreadable.count
+        }
+        if case .diskFree(let path, let bytes) = condition {
+            result.thresholdBytes = bytes
+            result.mountPath = observedMount ?? path
+        }
+        if state == "met", let processResult {
+            result.processes = processResult.processes
+            result.matched = processResult.matched
         }
         completion(result)
     }

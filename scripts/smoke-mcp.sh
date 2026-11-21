@@ -107,7 +107,7 @@ session() {
   call 43 wait_for "{\"condition\":\"process_exit\",\"pid\":$CANCELME,\"timeoutSeconds\":20}"
   echo '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":43,"reason":"smoke"}}'
   call 44 wait_for '{"condition":"memory_pressure_normal","timeoutSeconds":2}'
-  call 45 wait_for '{"condition":"cpu_idle","timeoutSeconds":2,"belowPercent":0}'
+  call 45 wait_for '{"condition":"cpu_idle","timeoutSeconds":3,"belowPercent":0}'
   call 46 wait_for '{"condition":"process_exit","pid":1}'
   sleep 8
   echo '{"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":"track_processes","arguments":{"action":"list"}}}'

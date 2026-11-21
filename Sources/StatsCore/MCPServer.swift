@@ -396,11 +396,14 @@ public final class MCPServer: @unchecked Sendable {
         [
             "name": "wait_for",
             "title": "Wait for",
-            "description": "Wait (up to timeoutSeconds, max 55) until a condition holds instead of sleeping or polling. cpu_idle: CPU below belowPercent for two consecutive 1 s readings — system-wide (percent of all cores) by default, or for a running trackId or a pid(+startToken)/name/path selector (percent of one core, summed; only readings of live matching processes count, so no match never means idle — unavailable if nothing matched, or once the pid or track is gone); on timeout returns the 3 busiest culprits. process_exit: pid (+startToken) exits; unavailable if not visible at the start. memory_pressure_normal: kernel memory pressure back to normal. Returns state met|timed_out|unavailable.",
+            "description": "Wait (up to timeoutSeconds, max 55) until a condition holds instead of sleeping or polling. cpu_idle: CPU below belowPercent for two consecutive 1 s readings — system-wide (percent of all cores) by default, or for a running trackId or a pid(+startToken)/name/path selector (percent of one core, summed; only readings of live matching processes count, so no match never means idle — unavailable if nothing matched, or once the pid or track is gone); on timeout returns the 3 busiest culprits. process_exit: pid (+startToken) exits; unavailable if not visible at the start. memory_pressure_normal: kernel memory pressure back to normal. CPU idle needs 2.5 s; normal pressure needs 1.5 s. process_started can miss processes shorter than a tick. Returns state met|timed_out|unavailable.",
             "inputSchema": [
                 "type": "object",
                 "properties": selectorProperties.merging([
-                    "condition": ["type": "string", "enum": ["cpu_idle", "process_exit", "memory_pressure_normal", "port_listening"]],
+                    "condition": ["type": "string", "enum": ["cpu_idle", "process_exit", "memory_pressure_normal", "port_listening", "process_started", "disk_free_above"]],
+                    "newInstancesOnly": ["type": "boolean", "default": false],
+                    "aboveGiB": ["type": "number", "exclusiveMinimum": 0],
+                    "volumePath": ["type": "string", "default": "/"],
                     "port": portProperty,
                     "belowPercent": ["type": "number", "minimum": 0, "maximum": 10000, "default": 20],
                     "trackId": ["type": "string", "description": "cpu_idle for the members of a running track."],
@@ -592,8 +595,8 @@ public final class MCPServer: @unchecked Sendable {
         let condition: WaitCondition
         let timeout: Double
         do {
-            timeout = try Args.double(args, "timeoutSeconds", default: 20, in: Waiter.timeoutRange)
             condition = try Args.waitCondition(args)
+            timeout = try Args.waitTimeout(args, condition: condition)
         } catch {
             let message = "\(error)"
             work.async { [self] in finish(result(id: id, errorToolResult(message))) }
@@ -831,9 +834,40 @@ enum Args {
         return port
     }
 
+    static func waitTimeout(_ args: [String: Any], condition: WaitCondition) throws -> Double {
+        let timeout = try double(args, "timeoutSeconds", default: 20, in: -Double.greatestFiniteMagnitude...55)
+        guard timeout >= condition.minimumTimeout else {
+            throw ToolError("\(condition.name) requires at least \(condition.minimumTimeout) seconds")
+        }
+        return timeout
+    }
+
     static func waitCondition(_ args: [String: Any]) throws -> WaitCondition {
         guard let condition = string(args, "condition") else {
             throw ToolError("condition is required: cpu_idle, process_exit or memory_pressure_normal")
+        }
+        let allowed: [String: Set<String>] = [
+            "cpu_idle": ["pid", "startToken", "name", "path", "argsContain", "trackId"],
+            "process_exit": ["pid", "startToken"], "memory_pressure_normal": [],
+            "process_started": ["name", "path", "argsContain"], "disk_free_above": ["aboveGiB"],
+            "port_listening": ["port"]
+        ]
+        guard let keys = allowed[condition] else { throw ToolError("unknown wait condition") }
+        let defaults: Set<String> = ["condition", "timeoutSeconds", "belowPercent", "match", "newInstancesOnly", "volumePath"]
+        if let unused = args.keys.sorted().first(where: { !keys.contains($0) && !defaults.contains($0) }) {
+            throw ToolError("\(unused) does not apply to \(condition)")
+        }
+        if condition == "disk_free_above" {
+            guard args["aboveGiB"] is NSNumber else { throw ToolError("aboveGiB requires a number") }
+            let raw = try double(args, "aboveGiB", default: 0, in: 0...Double(UInt64.max) / 1073741824)
+            let bytes = (raw * 1073741824).rounded(.up)
+            guard raw > 0, bytes < Double(UInt64.max) else { throw ToolError("aboveGiB must specify a positive representable disk size") }
+            let path = try optionalString(args, "volumePath") ?? "/"
+            guard path.hasPrefix("/"), !path.utf8.contains(0) else { throw ToolError("volumePath must be absolute") }
+            return .diskFree(path: path, bytes: UInt64(bytes))
+        }
+        if condition == "process_started" {
+            return .processStarted(try selector(args), newOnly: try bool(args, "newInstancesOnly", default: false))
         }
         if condition == "port_listening" {
             guard args["trackId"] == nil, args["probeFree"] == nil else { throw ToolError("port_listening accepts neither trackId nor probeFree") }

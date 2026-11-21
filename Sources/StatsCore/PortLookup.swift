@@ -12,11 +12,7 @@ public enum PortLookup {
         let rows = (entries ?? []).compactMap { entry -> FindResult.Row? in
             guard listens(entry.pid, port: port) else { return nil }
             let row = ProcessFinder.read(pid: entry.pid, ppid: Proc.parent(entry.pid), name: Proc.name(entry.pid), path: nil)
-            var info = proc_bsdinfo()
-            let size = Int32(MemoryLayout.size(ofValue: info))
-            guard proc_pidinfo(entry.pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
-                  info.pbi_uid == geteuid(), info.pbi_start_tvsec == entry.startSec,
-                  info.pbi_start_tvusec == entry.startUsec else { return nil }
+            guard Proc.matches(entry.pid, startSec: entry.startSec, startUsec: entry.startUsec) else { return nil }
             return row
         }.sorted { ($0.footprintBytes ?? 0, $0.pid) > ($1.footprintBytes ?? 0, $1.pid) }
         result.matched = rows.count

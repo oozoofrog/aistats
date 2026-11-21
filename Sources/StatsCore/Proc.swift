@@ -102,6 +102,13 @@ public enum Proc {
         return Array(args.dropFirst())
     }
 
+    static func matches(_ pid: Int32, startSec: Int, startUsec: Int32) -> Bool {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout.size(ofValue: info))
+        return proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size && info.pbi_uid == geteuid()
+            && info.pbi_start_tvsec == startSec && info.pbi_start_tvusec == startUsec
+    }
+
     public static func parent(_ pid: Int32) -> Int32? {
         var info = proc_bsdshortinfo()
         let size = Int32(MemoryLayout<proc_bsdshortinfo>.size)
@@ -228,6 +235,10 @@ public final class ProcessDirectory {
         public var name: String
         public var path: String?
         fileprivate var key: CacheKey?
+        var isCurrentInstance: Bool {
+            guard let key else { return false }
+            return Proc.matches(pid, startSec: key.sec, startUsec: key.usec)
+        }
 
         public init(pid: Int32, ppid: Int32, name: String, path: String?) {
             self.pid = pid; self.ppid = ppid; self.name = name; self.path = path

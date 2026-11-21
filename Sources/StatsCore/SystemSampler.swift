@@ -69,7 +69,7 @@ public final class SystemSampler: @unchecked Sendable {
         if slowMetricsInterval > 0, let c = slowCache, Double(now &- c.at) / 1e9 < slowMetricsInterval {
             disk = c.disk; battery = c.battery
         } else {
-            disk = sampleDisk(); battery = sampleBattery()
+            disk = Self.readDisk(at: diskPath); battery = sampleBattery()
             slowCache = (now, disk, battery)
             slowMetricReads += 1
         }
@@ -200,7 +200,7 @@ public final class SystemSampler: @unchecked Sendable {
 
     // MARK: Disk
 
-    private func sampleDisk() -> Snapshot.Disk? {
+    static func readDisk(at diskPath: String) -> Snapshot.Disk? {
         var fs = statfs()
         guard statfs(diskPath, &fs) == 0 else { return nil }
         let block = UInt64(fs.f_bsize)
