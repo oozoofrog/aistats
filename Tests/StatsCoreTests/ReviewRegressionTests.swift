@@ -339,6 +339,7 @@ private func manager(_ home: URL = tempDir()) -> TrackManager {
     @Test func readyNeedsEveryReading() {
         var s = snapshot(unavailable: nil)
         s.cpu.usagePercent = 5
+        s.cpu.loadAverage1m = 0
         s.memory.pressure = "normal"
         s.thermalState = "nominal"
         s.disk = .init(mountPath: "/", totalBytes: 1 << 40, availableBytes: 500 << 30, availableForImportantUsageBytes: 500 << 30)

@@ -17,6 +17,16 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources"
 cp "$BIN/AIStatsMenu" "$STAGE/Contents/MacOS/AIStatsMenu"
 cp "$BIN/aistats" "$STAGE/Contents/MacOS/aistats"
+FONT_BUNDLE="$BIN/AIStats_AIStatsMenu.bundle"
+FONT_DIR="$FONT_BUNDLE/Contents/Resources/Fonts"
+if [ ! -d "$FONT_DIR" ]; then FONT_DIR="$FONT_BUNDLE/Fonts"; fi
+for file in Orbitron-{Black,Bold}.ttf JetBrainsMono-{Regular,Bold}.ttf {Orbitron,JetBrainsMono}-OFL.txt NOTICE.md; do
+  if [ ! -s "$FONT_DIR/$file" ]; then
+    echo "Missing font resource: $FONT_DIR/$file" >&2
+    exit 1
+  fi
+done
+cp -R "$FONT_BUNDLE" "$STAGE/Contents/Resources/"
 cp Resources/Info.plist "$STAGE/Contents/Info.plist"
 cp Resources/AppIcon.icns "$STAGE/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$STAGE/Contents/MacOS/aistats"

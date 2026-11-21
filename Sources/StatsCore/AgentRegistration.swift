@@ -585,10 +585,26 @@ public final class AgentRegistrar: @unchecked Sendable {
     /// Registers this binary. An entry that isn't ours (a name conflict) is replaced only when `replacing`
     /// is its fingerprint (`RegistrationStatus.entryFingerprint`), i.e. the user confirmed exactly that entry.
     public func install(_ target: AgentTarget, replacing: String? = nil) -> RegistrationOutcome {
+        install(target, replacing: replacing, requireConflict: false)
+    }
+
+    /// Applies GUI consent to a name conflict only. The ordinary install contract can also create
+    /// or update an owned registration when there is no conflict.
+    package func replaceConfirmedConflict(_ target: AgentTarget, fingerprint: String) -> RegistrationOutcome {
+        install(target, replacing: fingerprint, requireConflict: true)
+    }
+
+    private func install(_ target: AgentTarget, replacing: String?, requireConflict: Bool) -> RegistrationOutcome {
         locks[target]!.lock(); defer { locks[target]!.unlock() }
         return withProcessLock(target) {
             let before = inspect(target)
             afterInspect?(target)
+            if requireConflict {
+                guard case .nameConflict = before.status.state,
+                      let entry = before.entry, entry.fingerprint == replacing else {
+                    return outcome(target, false, "failed", Self.changedMessage(before.entry), before.status)
+                }
+            }
             var replacing_ = false
             switch before.status.state {
             case .agentNotFound:

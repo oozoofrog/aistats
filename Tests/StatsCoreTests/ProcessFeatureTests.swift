@@ -366,7 +366,11 @@ func uniqueSleeper(in dir: URL) throws -> URL {
 // MARK: - Diagnosis, environment, sampler
 
 @Suite struct DiagnosisTests {
-    func snapshot() -> Snapshot { SystemSampler().measure(interval: 0.1) }
+    func snapshot() -> Snapshot {
+        var sample = SystemSampler().measure(interval: 0.1)
+        sample.cpu.loadAverage1m = 0
+        return sample
+    }
 
     @Test func busyCPUIsAnIssue() {
         var s = snapshot()

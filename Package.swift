@@ -11,7 +11,8 @@ let package = Package(
     targets: [
         .target(name: "StatsCore"),
         .executableTarget(name: "aistats", dependencies: ["StatsCore"]),
-        .executableTarget(name: "AIStatsMenu", dependencies: ["StatsCore"]),
+        .executableTarget(name: "AIStatsMenu", dependencies: ["StatsCore"], resources: [.copy("Fonts")]),
+        .testTarget(name: "AIStatsMenuTests", dependencies: ["AIStatsMenu"]),
         .testTarget(name: "StatsCoreTests", dependencies: ["StatsCore"]),
     ],
     swiftLanguageModes: [.v5]

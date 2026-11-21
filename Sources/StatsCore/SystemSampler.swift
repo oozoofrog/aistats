@@ -35,7 +35,7 @@ public final class SystemSampler: @unchecked Sendable {
     public var slowMetricsInterval: TimeInterval
     private var slowCache: (at: UInt64, disk: Snapshot.Disk?, battery: Snapshot.Battery?)?
     /// How many times disk and battery were actually read (the rest came from the cache).
-    private(set) var slowMetricReads = 0
+    package private(set) var slowMetricReads = 0
     /// Metrics that failed during the current `sample()`.
     private var failed: [String] = []
 
@@ -52,12 +52,17 @@ public final class SystemSampler: @unchecked Sendable {
     }
 
     public func sample(includeProcesses: Bool = false) -> Snapshot {
+        sample { enumerate in includeProcesses ? enumerate() : nil }
+    }
+
+    package func sample(enumerateProcesses: (() -> [pid_t]) -> [pid_t]?) -> Snapshot {
         let now = DispatchTime.now().uptimeNanoseconds
         let elapsed = lastSampleTime.map { Double(now &- $0) / 1e9 } ?? 0
         lastSampleTime = now
 
         failed = []
-        let processes = includeProcesses ? sampleProcesses(now: now) : nil
+        processCPUIsFresh = false
+        let processes = enumerateProcesses(Proc.allPids).map { sampleProcesses($0, now: now) }
 
         let disk: Snapshot.Disk?, battery: Snapshot.Battery?
         if slowMetricsInterval > 0, let c = slowCache, Double(now &- c.at) / 1e9 < slowMetricsInterval {
@@ -292,12 +297,8 @@ public final class SystemSampler: @unchecked Sendable {
 
     // MARK: Processes
 
-    private func sampleProcesses(now: UInt64) -> [ProcessUsage] {
-        let estimate = proc_listallpids(nil, 0)
-        guard estimate > 0 else { return [] }
-        var pids = [pid_t](repeating: 0, count: Int(estimate) + 64)
-        let count = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
-        guard count > 0 else { return [] }
+    private func sampleProcesses(_ pids: [pid_t], now: UInt64) -> [ProcessUsage] {
+        guard !pids.isEmpty else { return [] }
 
         let wall = lastProcTime.map { Double(now &- $0) } ?? 0
         // Over a very short window (e.g. a refresh right after the timer fired) a few
@@ -306,7 +307,7 @@ public final class SystemSampler: @unchecked Sendable {
         var next: [Int32: (start: UInt64, cpuNs: UInt64, name: String)] = [:]
         next.reserveCapacity(procCache.count)
         var result: [ProcessUsage] = []
-        for pid in pids.prefix(Int(count)) where pid > 0 {
+        for pid in pids {
             var info = rusage_info_v4()
             let ok = withUnsafeMutablePointer(to: &info) { ptr in
                 ptr.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
