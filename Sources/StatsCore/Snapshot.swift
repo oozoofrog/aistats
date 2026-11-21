@@ -184,3 +184,22 @@ public extension Snapshot {
         return lines.joined(separator: "\n")
     }
 }
+
+extension Snapshot {
+    func structuredData(using encoder: JSONEncoder) throws -> Data {
+        let data = try encoder.encode(self)
+        guard let unavailable, !unavailable.isEmpty else { return data }
+        var payload = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        func clear(_ metric: String, _ object: String, _ fields: [String]) {
+            guard unavailable.contains(metric), var values = payload[object] as? [String: Any] else { return }
+            for field in fields { values[field] = NSNull() }
+            payload[object] = values
+        }
+        clear("cpu", "cpu", ["usagePercent", "userPercent", "systemPercent"])
+        clear("memory", "memory", ["usedBytes", "appBytes", "wiredBytes", "compressedBytes", "cachedBytes", "usedPercent"])
+        clear("swap", "memory", ["swapUsedBytes"])
+        clear("network", "network", ["receivedBytesPerSecond", "sentBytesPerSecond"])
+        clear("networkCounters", "network", ["receivedTotalBytes", "sentTotalBytes", "interfaces"])
+        return try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+}

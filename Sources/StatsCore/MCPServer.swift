@@ -431,7 +431,7 @@ public final class MCPServer: @unchecked Sendable {
                 record(name)
                 var snapshot = sampler.measure(interval: 0.5, includeProcesses: true)
                 snapshot.topProcesses = sampler.topProcesses(sortedBy: .cpu, limit: 5, from: snapshot.topProcesses ?? [])
-                return result(id: id, try toolResult(text: snapshot.summary, json: snapshot))
+                return result(id: id, try toolResult(text: snapshot.summary, data: snapshot.structuredData(using: Self.encoder)))
 
             case "get_top_processes":
                 let sort = try ProcessSort(rawValue: Args.string(args, "sort") ?? "cpu").orThrow("sort must be cpu or memory")
@@ -447,17 +447,9 @@ public final class MCPServer: @unchecked Sendable {
                 record(name, "\(minutes)m")
                 let points = history.points(since: Date().addingTimeInterval(-Double(minutes) * 60))
                 let recording = history.isRecording()
-                guard let summary = HistorySummary.make(from: points, maxPoints: maxPoints) else {
-                    let state = recording
-                        ? "running but has not recorded this window yet"
-                        : "not running (start it with: open -b \(AIStatsPaths.appBundleIdentifier))"
-                    return result(id: id, try toolResult(
-                        text: "No history for the last \(minutes) minutes. The AIStats menu bar app records history while it runs; it is \(state). get_system_stats works without it.",
-                        json: HistoryResult(recording: recording, summary: nil)))
-                }
-                var text = summary.text
-                if !recording { text += "\nThe AIStats app is not recording now; this history ends at the last recorded sample." }
-                return result(id: id, try toolResult(text: text, json: HistoryResult(recording: recording, summary: summary)))
+                let historyResult = HistoryResult(minutes: minutes, recording: recording,
+                                                  summary: HistorySummary.make(from: points, maxPoints: maxPoints))
+                return result(id: id, try toolResult(text: historyResult.text, json: historyResult))
 
             case "diagnose_system":
                 let purpose = Args.string(args, "purpose") ?? "slowdown"
@@ -617,11 +609,13 @@ public final class MCPServer: @unchecked Sendable {
     }
 
     private struct ProcessList: Encodable { var sort: String; var processes: [ProcessUsage] }
-    private struct HistoryResult: Encodable { var recording: Bool; var summary: HistorySummary? }
     private struct TrackList: Encodable { var tracks: [TrackListRow] }
 
     private func toolResult<T: Encodable>(text: String, json: T) throws -> [String: Any] {
-        let data = try Self.encoder.encode(json)
+        try toolResult(text: text, data: Self.encoder.encode(json))
+    }
+
+    private func toolResult(text: String, data: Data) -> [String: Any] {
         var result: [String: Any] = [
             "content": [["type": "text", "text": text + "\n\n" + String(decoding: data, as: UTF8.self)]],
             "isError": false,

@@ -165,6 +165,30 @@ public final class HistoryStore: @unchecked Sendable {
     }
 }
 
+public struct HistoryResult: Encodable, Sendable {
+    public let minutes: Int
+    public let recording: Bool
+    public let summary: HistorySummary?
+    public let startCommand: String?
+    public let fallbackTool: String?
+    public let notes: [String]?
+
+    public init(minutes: Int, recording: Bool, summary: HistorySummary?) {
+        self.minutes = minutes
+        self.recording = recording
+        self.summary = summary
+        startCommand = recording ? nil : "open -b " + AIStatsPaths.appBundleIdentifier
+        fallbackTool = summary == nil ? "get_system_stats" : nil
+        notes = !recording && summary != nil ? ["The AIStats app is not recording now; this history ends at the last recorded sample."] : nil
+    }
+
+    public var text: String {
+        if let summary { return ([summary.text] + (notes ?? [])).joined(separator: "\n") }
+        let state = startCommand.map { "not running (start it with: " + $0 + ")" } ?? "running but has not recorded this window yet"
+        return "No history for the last \(minutes) minutes. The AIStats menu bar app records history while it runs; it is \(state). get_system_stats works without it."
+    }
+}
+
 public struct HistorySummary: Codable, Sendable {
     public struct Range: Codable, Sendable {
         public var min: Double

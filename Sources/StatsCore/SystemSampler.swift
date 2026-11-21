@@ -262,7 +262,7 @@ public final class SystemSampler: @unchecked Sendable {
 
     private func sampleNetwork(elapsed: Double) -> Snapshot.Network {
         guard let counters = Self.readNetworkCounters(buffer: &netBuffer) else {
-            failed.append("network")
+            failed.append(contentsOf: ["network", "networkCounters"])
             lastNet = nil
             return Snapshot.Network(receivedBytesPerSecond: 0, sentBytesPerSecond: 0, receivedTotalBytes: 0,
                                     sentTotalBytes: 0, interfaces: [])
