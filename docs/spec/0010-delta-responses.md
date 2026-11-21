@@ -53,7 +53,7 @@ Requirements use the ASD-STE100 sentence rules and the Terms below. Each active 
 
 ### Evidence gaps
 
-- No measurement shows how often agents repeat these two calls. The activity log keeps the last 200 calls and records `status` for track status calls. See [Store.swift:278](../../Sources/StatsCore/Store.swift#L278) and [MCPServer.swift:519](../../Sources/StatsCore/MCPServer.swift#L519). It can supply that measurement.
+- The initial design lacked repeat-rate evidence. The activity log keeps the last 200 calls and records `status` for track status calls. See [Store.swift:278](../../Sources/StatsCore/Store.swift#L278) and [MCPServer.swift:519](../../Sources/StatsCore/MCPServer.swift#L519). It can supply that measurement.
 - Byte savings in this document are estimates. Token counts use about 4 bytes per token. No tokenizer measurement exists.
 - A client can drop old tool results from the model context, for example after context compaction. A Delta Result is then hard to use, because the model no longer has the Base.
 
@@ -168,9 +168,9 @@ Requirements use the ASD-STE100 sentence rules and the Terms below. Each active 
 
 ## Open questions
 
-- No measurement shows how often agents repeat these calls. The savings are not known. Measure the repeat rate from the activity log before implementation.
+- A pre-implementation sample of 26 calls contained five snapshots and two track status calls. Four snapshots and one status were repeats. The distribution across other workloads remains unknown.
 - The Tolerance values in Table 1 are proposals. They are not tested against agent decisions.
 - The 600-second Cursor lifetime and the limit of 8 Cursors per Session are proposals.
 - It is not known whether models merge a Delta Result with the Base correctly. It is not known how often the Base is gone from the context. An agent evaluation is needed.
-- The 400-byte and 800-byte targets in DLT-033 and DLT-034 are estimates from the field lists. They were not measured.
+- The unchanged snapshot fixture fits 400 bytes. The unchanged ended-track response measured 481 bytes when a second stdio server reused the cursor.
 - [ADR 0008](../adr/0008-cross-session-track-cursors.md) defines a bounded index for cross-session track status.

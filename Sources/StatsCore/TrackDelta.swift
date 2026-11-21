@@ -24,6 +24,13 @@ enum TrackDelta {
         return Data(SHA256.hash(data: data)).base64EncodedString()
     }
 
+    static func isCursor(_ value: String) -> Bool {
+        let parts = value.dropFirst(2).split(separator: ".", omittingEmptySubsequences: false)
+        guard value.utf8.count == 63, value.hasPrefix("t-"), parts.count == 2,
+              parts[0].count == 24, parts[0].allSatisfy({ $0.isHexDigit }) else { return false }
+        return UUID(uuidString: String(parts[1])) != nil
+    }
+
     static func directory(_ id: String, home: URL) -> URL {
         TrackManager.tracksDir(home).appendingPathComponent(id + ".cursors", isDirectory: true)
     }
@@ -115,7 +122,7 @@ enum TrackDelta {
                 out["delta"] = false
                 if since.hasPrefix(prefix), UUID(uuidString: String(since.dropFirst(prefix.count))) != nil {
                     out["deltaReset"] = "expired"
-                } else if since.hasPrefix("s-") || since.hasPrefix("t-") {
+                } else if SnapshotDelta.isCursor(since) || isCursor(since) {
                     out["deltaReset"] = "other_target"
                 } else { out["deltaReset"] = "unknown_cursor" }
             }

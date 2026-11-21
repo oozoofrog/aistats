@@ -7,6 +7,12 @@ final class SnapshotDelta {
         var issued: TimeInterval
         var fields: Object
     }
+    static func isCursor(_ value: String) -> Bool {
+        guard value.utf8.count <= 64, value.hasPrefix("s-"), let separator = value.lastIndex(of: "-"),
+              let number = UInt64(value[value.index(after: separator)...]), number > 0 else { return false }
+        return value[value.index(after: separator)...] == String(number) && UUID(uuidString: String(value[..<separator].dropFirst(2))) != nil
+    }
+
     private let namespace = "s-" + UUID().uuidString + "-"
     private var serial: UInt64 = 0
     private var bases: [Base] = []
@@ -48,9 +54,9 @@ final class SnapshotDelta {
             }
             out["unchanged"] = unchanged
         } else if let since {
-            if since.hasPrefix(namespace), let number = UInt64(since.dropFirst(namespace.count)), number > 0, number < serial {
+            if Self.isCursor(since), since.hasPrefix(namespace), let number = UInt64(since.dropFirst(namespace.count)), number > 0, number < serial {
                 out["deltaReset"] = "expired"
-            } else { out["deltaReset"] = since.hasPrefix("t-") ? "other_target" : "unknown_cursor" }
+            } else { out["deltaReset"] = TrackDelta.isCursor(since) ? "other_target" : "unknown_cursor" }
         }
         while try !fits(out), var rows = out["topProcesses"] as? [Object], !rows.isEmpty {
             rows.removeLast()

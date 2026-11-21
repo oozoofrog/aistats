@@ -17,9 +17,11 @@ def session(binary, home):
             server.stdin.flush()
             return json.loads(server.stdout.readline())["result"]
 
-        def track(**args):
+        def track(expect_error=False, **args):
             result = request("tools/call", dict(name="track_processes", arguments=args))
-            assert not result["isError"], result
+            assert result["isError"] == expect_error, result
+            if expect_error:
+                return None
             return result["structuredContent"]
 
         try:
@@ -39,6 +41,17 @@ with tempfile.TemporaryDirectory() as home:
 
     with session(sys.argv[1], home) as second:
         status = dict(action="status", trackId=track_id)
+        for action in ["start", "list", "stop"]:
+            second(expect_error=True, action=action, since=base["cursor"])
+        malformed = second(**status, since="t-bad")
+        assert malformed["delta"] is False and malformed["deltaReset"] == "unknown_cursor"
+        for suffix in ["01", "+1"]:
+            fake_snapshot = "s-12345678-1234-1234-1234-123456789abc-" + suffix
+            assert second(**status, since=fake_snapshot)["deltaReset"] == "unknown_cursor"
+        another = second(action="start", pid=os.getpid())["trackId"]
+        other = second(action="status", trackId=another, since=base["cursor"])
+        assert other["deltaReset"] == "other_target"
+        second(action="stop", trackId=another)
         delta = second(**status, since=base["cursor"])
         assert delta["delta"] and delta["state"] == base["state"]
         assert set(delta["unchanged"]) == {"config", "instances", "members", "events", "spikes", "spawn", "notes"}
