@@ -40,10 +40,8 @@ public struct Diagnosis: Codable, Sendable {
         return s
     }
 
-    public static func make(purpose: String, snapshot s: Snapshot, top: [ProcessUsage]) -> Diagnosis {
+    static func signals(snapshot s: Snapshot, top: [ProcessUsage], cpuOK: Bool, loadOK: Bool) -> [Evidence] {
         var evidence: [(rank: Int, e: Evidence)] = []
-        let cpuOK = s.isAvailable("cpu")
-        let memOK = s.isAvailable("memory")
         if cpuOK, s.cpu.usagePercent >= cpuBusyPercent {
             var d = String(format: "CPU %.0f%% busy across %d cores", s.cpu.usagePercent, s.cpu.logicalCores)
             if let p = top.first { d += String(format: " (top: %@ %.0f%%)", p.name, p.cpuPercent) }
@@ -51,7 +49,7 @@ public struct Diagnosis: Codable, Sendable {
         }
         let cores = max(1, s.cpu.logicalCores)
         let load1 = s.cpu.loadAverage1m
-        if cpuOK, load1 >= loadPerCore * Double(cores) {
+        if loadOK, load1 >= loadPerCore * Double(cores) {
             let ratio = load1 / Double(cores)
             evidence.append((ratio >= 2 * loadPerCore ? 1 : 2, .init(
                 metric: "loadAverage", observed: (load1 * 100).rounded() / 100, threshold: loadPerCore * Double(cores),
@@ -62,7 +60,7 @@ public struct Diagnosis: Codable, Sendable {
             let level = ["warning": 1.0, "critical": 2.0][s.memory.pressure]
             if let level {
                 evidence.append((level > 1 ? 0 : 3, .init(metric: "memoryPressure", observed: level, threshold: 1, unit: "level (1 warning, 2 critical)",
-                                     detail: "memory pressure \(s.memory.pressure), swap \(Format.bytes(s.memory.swapUsedBytes))")))
+                                     detail: "memory pressure \(s.memory.pressure), swap \(s.isAvailable("swap") ? Format.bytes(s.memory.swapUsedBytes) : "unknown")")))
             }
         }
         let thermal = ["serious": 2.0, "critical": 3.0][s.thermalState]
@@ -81,7 +79,13 @@ public struct Diagnosis: Codable, Sendable {
             evidence.append((1, .init(metric: "battery", observed: Double(b.percent), threshold: Double(lowBatteryPercent), unit: "percent",
                                   detail: "on battery at \(b.percent)%")))
         }
-        let sorted = evidence.sorted { $0.rank < $1.rank }.prefix(4).map(\.e)
+        return evidence.sorted { $0.rank < $1.rank }.map(\.e)
+    }
+
+    public static func make(purpose: String, snapshot s: Snapshot, top: [ProcessUsage]) -> Diagnosis {
+        let cpuOK = s.isAvailable("cpu")
+        let memOK = s.isAvailable("memory")
+        let sorted = signals(snapshot: s, top: top, cpuOK: cpuOK, loadOK: cpuOK && s.isAvailable("loadAverage")).prefix(4)
         let status: String
         if !sorted.isEmpty { status = "issue_detected" }
         else if !cpuOK || !memOK { status = "insufficient_data" }

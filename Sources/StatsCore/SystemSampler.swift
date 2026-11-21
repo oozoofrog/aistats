@@ -117,7 +117,7 @@ public final class SystemSampler: @unchecked Sendable {
 
     private func sampleCPU() -> Snapshot.CPU {
         var load = [Double](repeating: 0, count: 3)
-        getloadavg(&load, 3)
+        if getloadavg(&load, 3) < 1 { failed.append("loadAverage") }
         let cores = ProcessInfo.processInfo.activeProcessorCount
         var result = Snapshot.CPU(usagePercent: 0, userPercent: 0, systemPercent: 0, logicalCores: cores,
                                   loadAverage1m: Self.round2(load[0]), loadAverage5m: Self.round2(load[1]),

@@ -55,6 +55,7 @@ default.
 ## CLI
 
 ```sh
+aistats preflight --json          # fast readiness check before heavy work
 aistats stats                     # one-shot system summary
 aistats top --sort memory --limit 10
 aistats track --name Xcode --children --duration 60 --spike-cpu 200

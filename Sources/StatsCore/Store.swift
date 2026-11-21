@@ -155,6 +155,27 @@ public final class HistoryStore: @unchecked Sendable {
         file.read(HistoryPoint.self).filter { $0.t >= since }
     }
 
+    func recentCPU(now: Date) -> Double? {
+        let fd = open(file.url.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { return nil }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+        guard let end = try? handle.seekToEnd(), end > 0 else { return nil }
+        let start = end > 8192 ? end - 8192 : 0
+        do {
+            try handle.seek(toOffset: start)
+            let data = try handle.read(upToCount: 8192) ?? Data()
+            for line in data.split(separator: 10).reversed() {
+                guard let point = try? JSONLinesFile.decoder.decode(HistoryPoint.self, from: line) else { continue }
+                let age = now.timeIntervalSince(point.t)
+                return age >= 0 && age < Self.staleAfter ? point.cpuPercent : nil
+            }
+        } catch {}
+        return nil
+    }
+
     public func latest() -> HistoryPoint? {
         file.read(HistoryPoint.self).last
     }

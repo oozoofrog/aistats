@@ -5,6 +5,7 @@ let usage = """
 aistats — lets AI agents (and you) read this Mac's stats
 
 USAGE
+  aistats preflight [--agent claude-code|codex] [--json]
   aistats stats [--json]                          CPU, memory, disk, network, battery
   aistats top [--sort cpu|memory] [--limit N] [--json]
   aistats history [--minutes N] [--json]          trend recorded by the AIStats app (1–60 min)
@@ -85,6 +86,10 @@ func run() throws {
     let all = CommandLine.arguments
     guard all.count > 1 else { print(usage); return }
     let command = all[1]
+    if command == "preflight" {
+        try preflight(Array(all.dropFirst(2)))
+        return
+    }
     if ["install", "uninstall", "status"].contains(command) {
         try registration(command, Array(all.dropFirst(2)))
         return
@@ -155,6 +160,10 @@ func run() throws {
 
     case "setup":
         let path = executablePath()
+        let quoted = "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let handler = ["type": "command", "if": "Bash(xcodebuild *)", "command": quoted + " preflight --agent claude-code"]
+        let hooks = ["hooks": ["PreToolUse": [["matcher": "Bash", "hooks": [handler]] as [String: Any]]]]
+        let snippet = try JSONSerialization.data(withJSONObject: hooks, options: [.sortedKeys, .withoutEscapingSlashes])
         print("""
         Claude Code:
           claude mcp add --scope user aistats -e AISTATS_MANAGED=1 -- "\(path)" mcp
@@ -167,6 +176,9 @@ func run() throws {
 
         Other MCP clients (JSON config):
           { "mcpServers": { "aistats": { "command": "\(path)", "args": ["mcp"], "env": { "AISTATS_MANAGED": "1" } } } }
+
+        Claude Code preflight hook:
+          \(String(decoding: snippet, as: UTF8.self))
 
         AISTATS_MANAGED=1 marks the entry as AIStats's own, so 'aistats install' can update it later.
         """)
@@ -186,7 +198,8 @@ do {
     try run()
 } catch {
     FileHandle.standardError.write(Data("aistats: \(error)\n".utf8))
-    exit(1)
+    let hook = CommandLine.arguments.dropFirst(2).contains { $0 == "--agent" || $0.hasPrefix("--agent=") }
+    exit(CommandLine.arguments.dropFirst().first == "preflight" && hook ? 0 : 1)
 }
 
 // MARK: - Registration
