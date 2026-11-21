@@ -297,15 +297,17 @@ public final class MCPServer: @unchecked Sendable {
 
 
     static let instructions = """
-    AIStats inspects this Mac in one call instead of ps/top/lsof/sample/sleep loops. Which tool first:
-    - Slow Mac, or about to build/test/run heavy work: diagnose_system.
-    - What uses CPU or memory now: get_top_processes (full machine numbers: get_system_stats).
-    - Find a process by name, executable path or pid (and get its startToken): find_processes.
-    - Watch processes over time (CPU/memory min/avg/max, restarts, child spawns, CPU spikes): track_processes start, later status.
-    - Instead of sleeping or polling: wait_for (cpu_idle, process_exit, memory_pressure_normal; up to 55 s per call).
-    - OS, chip, Xcode/Swift versions: get_environment. Last hour's trend: get_stats_history (needs the AIStats app).
-    Structured content fits 4096 bytes; omitted counts mark trimmed lists.
-    Only the current user's processes are readable; others need root.
+    Current user's processes only.
+    Slow Mac or heavy job readiness: diagnose_system
+    Current system readings: get_system_stats
+    Rank CPU or memory: get_top_processes
+    Look up PID, name, path or TCP listener: find_processes
+    Monitor resource use over time: track_processes
+    Block until a condition holds: wait_for
+    OS, chip and toolchain versions: get_environment
+    Past resource trends: get_stats_history
+    List sessions and attribute busy processes: get_agent_sessions
+    History needs the menu app. A wait lasts at most 55 seconds. Keep a startToken to guard against PID reuse. Structured content fits 4096 bytes. Omission counts mark trimmed lists.
     """
 
     private func touchPresence() {
