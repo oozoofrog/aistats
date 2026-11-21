@@ -71,6 +71,10 @@ public struct Snapshot: Codable, Sendable {
         public var availableBytes: UInt64
         /// Space macOS can make available for important work (includes purgeable data).
         public var availableForImportantUsageBytes: UInt64?
+        /// Wall-clock time of the read; kept out of the JSON (history stores it as `diskReadAt`).
+        public var readAt: Date? = nil
+
+        enum CodingKeys: String, CodingKey { case mountPath, totalBytes, availableBytes, availableForImportantUsageBytes }
     }
 
     public struct Network: Codable, Sendable {

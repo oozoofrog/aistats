@@ -302,16 +302,17 @@ public final class MCPServer: @unchecked Sendable {
     static let instructions = """
     Current user's processes only.
     Slow Mac or heavy job readiness: diagnose_system
-    Current system readings: get_system_stats
+    Current readings: get_system_stats
     Rank CPU or memory: get_top_processes
     Look up PID, name, path or TCP listener: find_processes
-    Monitor resource use over time: track_processes
-    Block until a condition holds: wait_for
+    Monitor use over time: track_processes
+    Wait for a condition: wait_for
     OS, chip, toolchain versions: get_environment
     Past resource trends: get_stats_history
-    Sessions and busy process owners: get_agent_sessions
+    Sessions, busy process owners: get_agent_sessions
     Process tree: get_process_tree
-    Simulator load: get_simulator_usage
+    Simulators: get_simulator_usage
+    Disk use: get_developer_storage
     History needs the menu app. A wait lasts at most 55 seconds. Keep a startToken to guard against PID reuse. Structured content fits 4096 bytes. Omission counts mark trimmed lists.
     """
 
@@ -475,6 +476,10 @@ public final class MCPServer: @unchecked Sendable {
             "annotations": ["readOnlyHint": true, "openWorldHint": false]
         ],
         [
+            "name": "get_developer_storage", "description": "Disk free, dev folder sizes, drain rate.",
+            "inputSchema": ["type": "object"],
+        ],
+        [
             "name": "get_agent_sessions",
             "description": "List live sessions, recent calls and CPU leaders by nearest agent. Subagents share their parent agent.",
             "inputSchema": ["type": "object", "properties": [
@@ -519,6 +524,10 @@ public final class MCPServer: @unchecked Sendable {
                 guard args.isEmpty else { throw ToolError("get_simulator_usage takes no arguments") }
                 record(name)
                 return try simulatorResponse(SimulatorUsage.measure(store: activity), id: id)
+            case "get_developer_storage":
+                guard args.isEmpty else { throw ToolError("get_developer_storage takes no arguments") }
+                record(name)
+                return try storageResponse(DeveloperStorage.collect(home: history.directory), id: id)
             case "get_agent_sessions":
                 for key in ["calls", "limit"] where args[key] != nil && !(args[key] is NSNumber) {
                     throw ToolError("\(key) requires an integer")
@@ -638,6 +647,18 @@ public final class MCPServer: @unchecked Sendable {
             if fits(body, id: id) { return result(id: id, body) }
         } while report.trim()
         throw ToolError("Simulator usage exceeds response budget")
+    }
+
+    func storageResponse(_ storage: DeveloperStorage, id: Any) throws -> [String: Any] {
+        var report = storage
+        repeat {
+            let body = try toolResult(text: report.summaryLine, json: report)
+            if fits(body, id: id) { return result(id: id, body) }
+        } while report.trim()
+        report.clipPaths()
+        let body = try toolResult(text: report.summaryLine, json: report)
+        if fits(body, id: id) { return result(id: id, body) }
+        throw ToolError("Developer storage exceeds response budget")
     }
 
     func findResponse(_ found: FindResult, id: Any) throws -> [String: Any] {

@@ -23,6 +23,7 @@ Requires macOS 14 or later. Only the current user's processes are readable (othe
 | `get_environment` | macOS version, chip, RAM, cores, Xcode and Swift versions |
 | `get_process_tree` | Rank agent subtrees, shared hosts and unattributed processes by CPU, footprint or disk I/O. Use `aistats tree --sort mem` for a terminal tree. |
 | `get_simulator_usage` | CPU (percent of one core), summed footprint and process count for each booted simulator device, keyed by its `launchd_sim` root PID, start token and boot time. Host services are excluded; no UDID, name or owner. Use `aistats sims --json` in a terminal. |
+| `get_developer_storage` | Capacity and free space of the boot data volume and Finder-visible volumes, the menu bar app's cached sizes of Xcode, SwiftPM and simulator folders (allocated bytes, measured in the background at most every six hours), and how fast free space on the boot volume dropped in the last hour. Never walks folders itself. Use `aistats storage --json` in a terminal. |
 | `get_agent_sessions` | List live sessions, recent calls, and CPU leaders by their nearest agent process. Set `origin: true` for CPU, memory or disk rankings, launch chains and session or ancestor filters |
 | `get_stats_history` | Trend over the last hour, recording state and recovery hints (recorded by the menu bar app) |
 
@@ -67,6 +68,7 @@ aistats preflight --json          # fast readiness check before heavy work
 aistats stats                     # one-shot system summary
 aistats top --sort memory --limit 10
 aistats sims --json               # CPU and memory per booted simulator device
+aistats storage --json            # volume free space, developer folder sizes, drain rate
 aistats track --name Xcode --children --duration 60 --spike-cpu 200
 aistats --help
 ```

@@ -118,6 +118,8 @@ public struct HistoryPoint: Codable, Sendable, Hashable {
     public var receivedBytesPerSecond: Double?
     public var sentBytesPerSecond: Double?
     public var diskAvailableBytes: UInt64?
+    /// Disk Read Time of `diskAvailableBytes`; points share it while the sampler reuses one disk read.
+    public var diskReadAt: Date?
     public var batteryPercent: Int?
 
     public init(snapshot s: Snapshot) {
@@ -130,6 +132,7 @@ public struct HistoryPoint: Codable, Sendable, Hashable {
         receivedBytesPerSecond = network ? s.network.receivedBytesPerSecond : nil
         sentBytesPerSecond = network ? s.network.sentBytesPerSecond : nil
         diskAvailableBytes = s.isAvailable("disk") ? s.disk?.availableBytes : nil
+        diskReadAt = diskAvailableBytes != nil ? s.disk?.readAt : nil
         batteryPercent = s.battery?.percent
     }
 }
@@ -142,8 +145,10 @@ public final class HistoryStore: @unchecked Sendable {
     public static let staleAfter: TimeInterval = 15
 
     private let file: JSONLinesFile
+    public let directory: URL
 
     public init(directory: URL = AIStatsPaths.home) {
+        self.directory = directory
         file = JSONLinesFile(url: directory.appendingPathComponent("history.jsonl"))
     }
 
@@ -201,7 +206,10 @@ public struct HistoryResult: Encodable, Sendable {
         memoryTotalBytes = ProcessInfo.processInfo.physicalMemory
         var compact = summary
         if let count = compact?.points.count {
-            for i in 0..<count { compact?.points[i].memoryUsedBytes = nil }
+            for i in 0..<count {
+                compact?.points[i].memoryUsedBytes = nil
+                compact?.points[i].diskReadAt = nil
+            }
         }
         self.summary = compact
         startCommand = recording ? nil : "open -b " + AIStatsPaths.appBundleIdentifier

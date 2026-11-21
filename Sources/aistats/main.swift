@@ -19,6 +19,7 @@ USAGE
   aistats history [--minutes N] [--json]          trend recorded by the AIStats app (1–60 min)
   aistats tree [--sort cpu|mem|disk]               process tree and subtree totals
   aistats sims [--json]                           CPU and memory per booted simulator device
+  aistats storage [--json]                        volume free space, developer folder sizes, drain rate
   aistats agents [--json] [--calls N] [--no-attribute]  connected agents and their recent calls
   aistats mcp [--name NAME]                       run the MCP server on stdio
   aistats status [AGENT|all] [--json]             is the MCP server registered with each agent
@@ -150,6 +151,11 @@ func run() throws {
     case "sims":
         guard args.options.isEmpty, args.flags.isSubset(of: ["json"]) else { throw CLIError("usage: aistats sims [--json]") }
         let report = SimulatorUsage.measure(store: ActivityStore())
+        if args.flags.contains("json") { try printJSON(report) } else { print(report.text()) }
+
+    case "storage":
+        guard args.options.isEmpty, args.flags.isSubset(of: ["json"]) else { throw CLIError("usage: aistats storage [--json]") }
+        let report = DeveloperStorage.collect()
         if args.flags.contains("json") { try printJSON(report) } else { print(report.text()) }
 
     case "agents":

@@ -212,7 +212,7 @@ public final class SystemSampler: @unchecked Sendable {
         }
         return Snapshot.Disk(mountPath: mount, totalBytes: UInt64(fs.f_blocks) * block,
                              availableBytes: UInt64(fs.f_bavail) * block,
-                             availableForImportantUsageBytes: important.map { UInt64(max(0, $0)) })
+                             availableForImportantUsageBytes: important.map { UInt64(max(0, $0)) }, readAt: Date())
     }
 
     // MARK: Network

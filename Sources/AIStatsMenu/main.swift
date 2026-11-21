@@ -7,6 +7,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
     private let model = AppModel()
+    private let storage = StorageScheduler.live()
     private let clock = AnimationClock()
     private var theme = Theme(options: .current)
     private let popover = NSPopover()
@@ -28,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             UNUserNotificationCenter.current().delegate = self
         }
         _ = PanelFonts.shared
+        storage.observeConditions()
+        storage.start()
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(togglePopover)
