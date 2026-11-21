@@ -50,3 +50,18 @@ with tempfile.TemporaryDirectory() as folder:
         assert reply.returncode == 0 and not reply.stdout and reply.stderr.startswith("aistats: ")
     print(f"20 calls: median {statistics.median(times):.1f} ms, maximum {max(times):.1f} ms")
     assert max(times) < 200
+    other = run("--agent", "codex", data='{"session_id":"b"}')
+    assert other.stdout
+    big = run("--agent", "codex", data="{" + "x" * (1024 * 1024))
+    assert big.returncode == 0 and not big.stdout and big.stderr.startswith("aistats: ")
+    started = time.monotonic()
+    with subprocess.Popen(command + ["--agent", "codex"], env=env, stdin=subprocess.PIPE,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE) as open_pipe:
+        open_pipe.wait(timeout=.2)
+        assert open_pipe.returncode == 0
+    assert time.monotonic() - started < .2
+    state = Path(folder, "preflight-sessions.json")
+    state.unlink()
+    state.mkdir()
+    denied = run("--agent", "codex", data='{"session_id":"fail"}')
+    assert denied.returncode == 0 and not denied.stdout and denied.stderr.startswith("aistats: ")

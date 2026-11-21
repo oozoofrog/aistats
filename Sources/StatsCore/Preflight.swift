@@ -11,8 +11,13 @@ public struct Preflight: Encodable {
     public static func measure() -> Preflight {
         let start = Proc.nowNs()
         let now = Date()
-        var snapshot = SystemSampler().sample()
+        let snapshot = SystemSampler().sample()
         let cpu = HistoryStore().recentCPU(now: now)
+        return assess(snapshot, cpu: cpu, at: now, start: start)
+    }
+
+    static func assess(_ reading: Snapshot, cpu: Double?, at now: Date, start: UInt64) -> Preflight {
+        var snapshot = reading
         if let cpu { snapshot.cpu.usagePercent = cpu }
         var missing: [String] = []
         if cpu == nil { missing.append("cpu") }
