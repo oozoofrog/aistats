@@ -985,7 +985,7 @@ package enum Args {
 
     package static func waitCondition(_ args: [String: Any]) throws -> WaitCondition {
         guard let condition = string(args, "condition") else {
-            throw ToolError("condition is required: cpu_idle, process_exit or memory_pressure_normal")
+            throw ToolError("condition is required: cpu_idle, process_exit, memory_pressure_normal, process_started, disk_free_above or port_listening")
         }
         let allowed: [String: Set<String>] = [
             "cpu_idle": ["pid", "startToken", "name", "path", "argsContain", "trackId"],
@@ -997,6 +997,9 @@ package enum Args {
         let defaults: Set<String> = ["condition", "timeoutSeconds", "belowPercent", "match", "newInstancesOnly", "volumePath"]
         if let unused = args.keys.sorted().first(where: { !keys.contains($0) && !defaults.contains($0) }) {
             throw ToolError("\(unused) does not apply to \(condition)")
+        }
+        if args["startToken"] != nil && (args["pid"] == nil || args["pid"] is NSNull) {
+            throw ToolError("startToken requires pid")
         }
         if condition == "disk_free_above" {
             guard args["aboveGiB"] is NSNumber else { throw ToolError("aboveGiB requires a number") }
@@ -1039,7 +1042,7 @@ package enum Args {
         case "memory_pressure_normal":
             return .memoryPressureNormal
         default:
-            throw ToolError("condition must be cpu_idle, process_exit or memory_pressure_normal")
+            throw ToolError("unknown wait condition")
         }
     }
 }

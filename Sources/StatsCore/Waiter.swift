@@ -101,6 +101,8 @@ public final class Waiter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "aistats.wait", qos: .userInitiated)
     /// Sampling period override (tests: a period far past the timeout shows the deadline timer ends the wait).
     var tickPeriod: TimeInterval?
+    var readObservation: ((UInt64) -> Observed)?
+    var readDisk: (String) -> Snapshot.Disk? = SystemSampler.readDisk
     private var timer: DispatchSourceTimer?
     private var deadlineTimer: DispatchSourceTimer?
     private var completion: ((WaitResult) -> Void)?
@@ -243,7 +245,8 @@ public final class Waiter: @unchecked Sendable {
 
     private func tick() {
         guard completion != nil else { return }
-        let obs = observe(now: Proc.nowNs())
+        let now = Proc.nowNs()
+        let obs = readObservation?(now) ?? observe(now: now)
         // An observation finished after the deadline doesn't count: the wait already ran out.
         if Proc.nowNs() > deadlineNs { timedOut(); return }
         last = obs.observation
@@ -275,7 +278,7 @@ public final class Waiter: @unchecked Sendable {
         finish("timed_out", reason: last?.valid == false ? invalidReason : nil)
     }
 
-    private struct Observed {
+    struct Observed {
         var observation: WaitResult.Observation
         var satisfied: Bool
         /// Set when no valid observation can happen any more (the watched instance or track is gone).
@@ -285,7 +288,7 @@ public final class Waiter: @unchecked Sendable {
     private func observe(now: UInt64) -> Observed {
         switch condition {
         case .diskFree(let path, let threshold):
-            guard let disk = SystemSampler.readDisk(at: path) else {
+            guard let disk = readDisk(path) else {
                 return Observed(observation: .init(at: Date(), valid: false), satisfied: false, ended: "Volume could not be read")
             }
             observedMount = disk.mountPath
