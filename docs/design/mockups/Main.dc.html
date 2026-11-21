@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>AIStats 패널 평상시</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Noto+Sans+KR:wght@400;500;700&amp;display=swap">
+<style>
+body{margin:0;background:#07060D}
+a{color:#00F0FF}a:hover{color:#7DF9FF}
+button{font:inherit;cursor:pointer}
+.grid{background-image:linear-gradient(rgba(0,240,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(0,240,255,.045) 1px,transparent 1px);background-size:20px 20px}
+.cut{clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))}
+.cut-s{clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,7px 100%,0 calc(100% - 7px))}
+.hud{position:relative}
+.hud::before,.hud::after{content:"";position:absolute;width:9px;height:9px;border-style:solid;border-color:#00F0FF;pointer-events:none}
+.hud::before{top:0;left:0;border-width:2px 0 0 2px}
+.hud::after{bottom:0;right:0;border-width:0 2px 2px 0}
+.seg{background-image:repeating-linear-gradient(90deg,currentColor 0 7px,transparent 7px 9px)}
+.track{background-image:repeating-linear-gradient(90deg,#1E1A35 0 7px,transparent 7px 9px)}
+.scan{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px)}
+@keyframes blink{50%{opacity:.3}}
+.blink{animation:blink 1.6s steps(2) infinite}
+</style>
+</helmet>
+<div class="grid" style="position: relative; width: 380px; height: 980px; box-sizing: border-box; padding: 18px 16px 16px; background-color: #07060D; color: #E8E6F5; font-family: 'Noto Sans KR', system-ui, sans-serif; display: flex; flex-direction: column; gap: 14px; overflow: hidden;">
+
+  <header style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+    <div style="display: flex; flex-direction: column; gap: 2px;">
+      <div style="font-family: Orbitron, sans-serif; font-weight: 900; font-size: 22px; letter-spacing: 3px; color: #00F0FF; text-shadow: 0 0 10px rgba(0,240,255,.65), 2px 0 0 rgba(255,42,109,.55);">AISTATS</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 1px; color: #9A97B8;">SYS//MONITOR · 2초마다 측정</div>
+    </div>
+    <div class="cut-s" style="display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: rgba(57,255,136,.10); border: 1px solid rgba(57,255,136,.55); font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #39FF88;">
+      <span class="blink" style="width: 7px; height: 7px; background: #39FF88; box-shadow: 0 0 8px #39FF88;"></span>
+      <span>에이전트 세션 9</span>
+    </div>
+  </header>
+
+  <div style="display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 2px; color: #FF2A6D;">
+    <span>// SYSTEM</span><span style="flex-grow: 1; height: 1px; background: linear-gradient(90deg, rgba(255,42,109,.6), transparent);"></span>
+  </div>
+
+  <section class="cut hud" style="padding: 14px 14px 12px; background: rgba(14,12,26,.92); border: 1px solid rgba(0,240,255,.35); display: flex; flex-direction: column; gap: 10px;" aria-label="CPU">
+    <div style="display: flex; align-items: baseline; justify-content: space-between;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: Orbitron, sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 2px; color: #9A97B8;">CPU</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 34px; line-height: 1; color: #00F0FF; text-shadow: 0 0 14px rgba(0,240,255,.55);">23.4<span style="font-size: 18px;">%</span></span>
+      </div>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9A97B8;">부하 3.12</span>
+    </div>
+    <svg width="346" height="52" viewBox="0 0 322 48" preserveAspectRatio="none" role="img" aria-label="최근 2분 CPU 사용률" style="display: block; background: rgba(0,240,255,.04); border-top: 1px dashed rgba(0,240,255,.18); border-bottom: 1px dashed rgba(0,240,255,.18);">
+      <polygon points="0,34 14,32 28,35 42,30 56,28 70,31 84,26 98,22 112,24 126,18 140,20 154,15 168,19 182,23 196,21 210,25 224,27 238,24 252,20 266,17 280,22 294,26 308,24 322,21 322,48 0,48" fill="rgba(0,240,255,.12)"></polygon>
+      <polyline points="0,34 14,32 28,35 42,30 56,28 70,31 84,26 98,22 112,24 126,18 140,20 154,15 168,19 182,23 196,21 210,25 224,27 238,24 252,20 266,17 280,22 294,26 308,24 322,21" fill="none" stroke="#00F0FF" stroke-width="1.6" stroke-linejoin="round" style="filter: drop-shadow(0 0 3px #00F0FF);"></polyline>
+    </svg>
+    <div style="display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #9A97B8;"><span>-2분</span><span>지금</span></div>
+  </section>
+
+  <section class="cut" style="padding: 12px 14px; background: rgba(14,12,26,.92); border: 1px solid rgba(154,151,184,.25); display: flex; flex-direction: column; gap: 12px;">
+    <div style="display: flex; flex-direction: column; gap: 6px;" aria-label="메모리 61%, 9.8 GB / 16 GB">
+      <div style="display: flex; align-items: baseline; gap: 10px; font-family: 'JetBrains Mono', monospace;">
+        <span style="width: 56px; font-family: 'Noto Sans KR', sans-serif; font-size: 12px; color: #9A97B8;">메모리</span>
+        <span style="font-size: 16px; font-weight: 700; color: #E8E6F5;">61%</span>
+        <span style="margin-left: auto; font-size: 11px; color: #9A97B8;">9.8 GB / 16 GB</span>
+      </div>
+      <div class="track" style="position: relative; height: 8px;"><div class="seg" style="position: absolute; inset: 0 auto 0 0; width: 61%; color: #00F0FF; filter: drop-shadow(0 0 4px rgba(0,240,255,.7));"></div></div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px;" aria-label="디스크 112 GB 남음, 전체 494 GB">
+      <div style="display: flex; align-items: baseline; gap: 10px; font-family: 'JetBrains Mono', monospace;">
+        <span style="width: 56px; font-family: 'Noto Sans KR', sans-serif; font-size: 12px; color: #9A97B8;">디스크</span>
+        <span style="font-size: 16px; font-weight: 700; color: #E8E6F5;">112 GB <span style="font-family: 'Noto Sans KR', sans-serif; font-size: 12px; font-weight: 500;">남음</span></span>
+        <span style="margin-left: auto; font-size: 11px; color: #9A97B8;">전체 494 GB</span>
+      </div>
+      <div class="track" style="position: relative; height: 8px;"><div class="seg" style="position: absolute; inset: 0 auto 0 0; width: 77%; color: #00F0FF; filter: drop-shadow(0 0 4px rgba(0,240,255,.7));"></div></div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+      <div class="cut-s" style="padding: 8px 10px; background: rgba(0,240,255,.05); border: 1px solid rgba(0,240,255,.2); display: flex; flex-direction: column; gap: 3px;">
+        <span style="font-family: Orbitron, sans-serif; font-size: 9px; letter-spacing: 2px; color: #9A97B8;">NET</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #E8E6F5;">↓ 1.2 MB/s</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #E8E6F5;">↑ 84 KB/s</span>
+      </div>
+      <div class="cut-s" style="padding: 8px 10px; background: rgba(0,240,255,.05); border: 1px solid rgba(0,240,255,.2); display: flex; flex-direction: column; gap: 3px;">
+        <span style="font-family: Orbitron, sans-serif; font-size: 9px; letter-spacing: 2px; color: #9A97B8;">BATTERY</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #E8E6F5;">82%</span>
+        <span style="font-size: 11px; color: #39FF88;">충전 중</span>
+      </div>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 4px;" aria-label="CPU 상위 프로세스">
+    <div style="display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 2px; color: #FF2A6D; margin-bottom: 4px;">
+      <span>// TOP PROC</span><span style="flex-grow: 1; height: 1px; background: linear-gradient(90deg, rgba(255,42,109,.6), transparent);"></span><span style="color: #9A97B8; letter-spacing: 0;">CPU · 메모리</span>
+    </div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 64px 70px; gap: 4px 10px; align-items: center; font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+      <span style="color: #E8E6F5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">swift-frontend</span><span style="text-align: right; color: #00F0FF;">182.4%</span><span style="text-align: right; color: #9A97B8;">1.4 GB</span>
+      <span style="color: #E8E6F5;">Xcode</span><span style="text-align: right; color: #00F0FF;">41.0%</span><span style="text-align: right; color: #9A97B8;">2.9 GB</span>
+      <span style="color: #E8E6F5;">node</span><span style="text-align: right; color: #00F0FF;">12.7%</span><span style="text-align: right; color: #9A97B8;">412 MB</span>
+    </div>
+  </section>
+
+  <div style="display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 2px; color: #FF2A6D;">
+    <span>// AGENTS</span><span style="flex-grow: 1; height: 1px; background: linear-gradient(90deg, rgba(255,42,109,.6), transparent);"></span>
+  </div>
+
+  <section class="cut" style="background: rgba(14,12,26,.92); border: 1px solid rgba(154,151,184,.25); display: flex; flex-direction: column;" aria-label="에이전트 연결">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid rgba(154,151,184,.14);">
+      <span style="width: 8px; height: 8px; background: #39FF88; box-shadow: 0 0 8px #39FF88; transform: rotate(45deg);" aria-hidden="true"></span>
+      <span style="width: 104px; font-size: 12.5px; font-weight: 500;">Claude Code</span>
+      <span style="font-size: 11.5px; color: #39FF88;">등록됨 · 세션 7개</span>
+      <button class="cut-s" style="margin-left: auto; height: 24px; padding: 0 10px; background: transparent; border: 1px solid rgba(154,151,184,.45); color: #C9C6E4; font-size: 11px;">연결 해제</button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid rgba(154,151,184,.14);">
+      <span style="width: 8px; height: 8px; background: #39FF88; box-shadow: 0 0 8px #39FF88; transform: rotate(45deg);" aria-hidden="true"></span>
+      <span style="width: 104px; font-size: 12.5px; font-weight: 500;">Codex</span>
+      <span style="font-size: 11.5px; color: #39FF88;">등록됨 · 세션 2개</span>
+      <button class="cut-s" style="margin-left: auto; height: 24px; padding: 0 10px; background: transparent; border: 1px solid rgba(154,151,184,.45); color: #C9C6E4; font-size: 11px;">연결 해제</button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid rgba(154,151,184,.14);">
+      <span style="width: 8px; height: 8px; border: 1px solid #00F0FF; transform: rotate(45deg); box-sizing: border-box;" aria-hidden="true"></span>
+      <span style="width: 104px; font-size: 12.5px; font-weight: 500;">Gemini CLI</span>
+      <span style="font-size: 11.5px; color: #9A97B8;">연결 안 됨</span>
+      <button class="cut-s" style="margin-left: auto; height: 24px; padding: 0 14px; background: #00F0FF; border: 0; color: #07060D; font-size: 11px; font-weight: 700; box-shadow: 0 0 12px rgba(0,240,255,.55);">연결</button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid rgba(154,151,184,.14);">
+      <span style="width: 8px; height: 8px; border: 1px solid #FFB000; transform: rotate(45deg); box-sizing: border-box;" aria-hidden="true"></span>
+      <span style="width: 104px; font-size: 12.5px; font-weight: 500;">Cursor</span>
+      <span style="font-size: 11.5px; color: #FFB000;">경로 바뀜</span>
+      <div style="margin-left: auto; display: flex; gap: 6px;">
+        <button class="cut-s" style="height: 24px; padding: 0 10px; background: rgba(255,176,0,.12); border: 1px solid #FFB000; color: #FFB000; font-size: 11px; font-weight: 700;">다시 연결</button>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px;">
+      <span style="width: 8px; height: 8px; border: 1px solid #6E6A8E; transform: rotate(45deg); box-sizing: border-box;" aria-hidden="true"></span>
+      <span style="width: 104px; font-size: 12.5px; font-weight: 500; color: #9A97B8;">Claude Desktop</span>
+      <span style="font-size: 11.5px; color: #9A97B8;">설치 안 됨</span>
+    </div>
+  </section>
+
+  <section style="display: flex; flex-direction: column; gap: 5px;" aria-label="최근 호출">
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 2px; color: #9A97B8; margin-bottom: 2px;">&gt; 최근 호출</div>
+    <div style="display: grid; grid-template-columns: 62px 84px minmax(0, 1fr); gap: 5px 8px; font-size: 11.5px;">
+      <span style="font-family: 'JetBrains Mono', monospace; color: #9A97B8;">14:02:11</span><span style="font-family: 'JetBrains Mono', monospace; color: #FF2A6D;">claude-code</span><span>느려짐 진단</span>
+      <span style="font-family: 'JetBrains Mono', monospace; color: #9A97B8;">14:01:58</span><span style="font-family: 'JetBrains Mono', monospace; color: #FF2A6D;">codex</span><span>조용해질 때까지 대기</span>
+      <span style="font-family: 'JetBrains Mono', monospace; color: #9A97B8;">14:01:40</span><span style="font-family: 'JetBrains Mono', monospace; color: #FF2A6D;">claude-code</span><span>프로세스 추적 시작</span>
+    </div>
+  </section>
+
+  <footer style="margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid rgba(0,240,255,.18);">
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #9A97B8;">aistats mcp · 연결 3/5</span>
+    <button class="cut-s" style="height: 24px; padding: 0 10px; background: transparent; border: 1px solid rgba(255,42,109,.6); color: #FF5C8D; font-size: 11px;">종료 <span style="font-family: 'JetBrains Mono', monospace; opacity: .8;">⌘Q</span></button>
+  </footer>
+
+  <sc-if value="{{scanlines}}" hint-placeholder-val="{{ true }}"><div class="scan"></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"scanlines":{"editor":"boolean","default":true},"$preview":{"width":380,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { scanlines: this.props.scanlines ?? true };
+  }
+}
+</script>
+</body>
+</html>
