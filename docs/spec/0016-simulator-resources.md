@@ -2,6 +2,7 @@
 
 Status · Proposed
 Issue · [#15](https://github.com/oozoofrog/aistats/issues/15)
+Proposed decision · [ADR 0012 · Account for visible simulator process trees without an owner registry](../adr/0012-simulator-accounting.md)
 
 ## Purpose and scope
 

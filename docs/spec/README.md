@@ -33,6 +33,7 @@
 - [ADR 0009 · Record observed descendant identities for the orphan report](../adr/0009-orphan-lineage.md)
 - [ADR 0010 · Measure a fixed set of developer directories in the app](../adr/0010-storage-accounting.md)
 - [ADR 0011 · Derive local duration baselines from observed track exits](../adr/0011-duration-baselines.md)
+- [ADR 0012 · Account for visible simulator process trees without an owner registry](../adr/0012-simulator-accounting.md)
 
 ## Document conventions
 
