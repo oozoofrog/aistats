@@ -34,6 +34,12 @@ Set `origin: true` on `get_agent_sessions`. Optional `sort` values are `cpu` (de
 
 Origin mode adds `serverStartToken` to session rows when available. Omit the token for an unverifiable session. Its identity cannot select workers. Each busy row adds `chain`, an array of identity objects with names. Disk rows also contain `readBytes`, `writtenBytes`, and `diskBytesPerSecond`. Remove oldest calls first. Shorten chain tails before removing lowest-ranked rows. Report `omittedNodes` per shortened chain and `omittedRows` for budget trimming.
 
+## Process tree
+
+The panel, CLI and MCP tree use a full current-user process table. A design probe measured two-second disk counters without root. One process denied the read. The probe observed ten agent roots, three shared hosts and 43 processes without an agent ancestor. Its display retained only 193 of 991 processes. Compute production totals before filtering, grouping or trimming. Prototype results measured 1,278 bytes for five agents in text and 3,871 bytes for ten agents with two children in JSON. Check the actual serialized byte count.
+
+A breadcrumb can show parents beyond an agent for navigation. This context never changes attribution. Memory uses physical footprint. Rates require two counter reads. Highlight thresholds use decimal GB and MB/s. Notification thresholds remain configurable. A shared host is an observed common ancestor of distinct agent roots. Names can classify development work for display. Names never establish ownership.
+
 ## Requirements
 
 | ID | Requirement | Acceptance check |
@@ -53,6 +59,16 @@ Origin mode adds `serverStartToken` to session rows when available. Omit the tok
 | ORG-013 | The app MUST keep local origin notifications off until enabled with notification permission. | A fresh profile and denied permission each produce zero notifications. Disabling the setting stops delivery. Closing both hosts stops process sampling under PERF-010. |
 | ORG-014 | On exposed-host samples, enabled notifications MUST identify the process, metric, measured value and observed origin on a configured threshold crossing. | Set a threshold for each metric. Replay below, above, above, below, above for one Instance. Expect two alerts and no repeated alert while above. |
 | ORG-015 | Origin reporting MUST use only current-user evidence without root privileges, command arguments, or private APIs. | Inspect responses and notifications for secret fixture arguments and other-user nodes. Verify neither appears. |
+| ORG-016 | The panel MUST show “프로세스 트리” with CPU, 메모리 and 디스크 sorting, per-session filters, 전체 and 출발점 불명 with a count. | Switch metric and session. Check sibling order by subtree total, then PID. |
+| ORG-017 | Each tree MUST compute own and subtree usage across the full table and stop aggregation at every agent root. | Nest two agents below a shared host. Count each measured process once. Hide rows and verify unchanged totals. |
+| ORG-018 | A tree MUST distinguish an unreadable own value from zero and mark partial totals as lower bounds. | Make a child metric unknown. Render “—” for own usage and “≥” for a partial sum. Preserve availability in JSON. |
+| ORG-019 | The panel MUST group agent roots, shared hosts and unattributed roots separately. | Expand a collapsed host and follow an agent stub. Group other launchd work under “기타”. Check Xcode, simulator and detached interpreter fixtures. |
+| ORG-020 | The panel MUST render tree guides, grouped sibling leaves, own and subtree readings and a bar for the selected metric. | Expand equally named leaves. Check green agent roots, amber heavy rows and a dimmed session server. Introduce own CPU ≥5%, memory ≥1 GB or disk ≥1 MB/s. |
+| ORG-021 | Tree navigation MUST expose expansion and selection to assistive technology and support arrow keys. | Use Up/Down for rows and Left/Right for collapse, expand and parent/child movement. Inspect accessible expansion and details. |
+| ORG-022 | Selected process details MUST show the observed breadcrumb, start time, age, own and subtree measurements and memory source. | Follow launchd → host → agent → worker. Verify the host appears as context and receives no agent subtotal. |
+| ORG-023 | The tree CLI MUST support --sort cpu, mem or disk and print a pstree-style hierarchy with aligned totals. | Inspect each sort for section headings, name(pid), N*[name], the marked sort column and source reasons. |
+| ORG-024 | get_process_tree MUST accept sort, limit and text or JSON format and report ranked agents, top children, server PIDs, host agent PIDs and unattributed reasons. | Probe both formats. Verify omitted child counts and truncation. |
+| ORG-025 | The MCP tree MUST fit SDD 0005 by trimming children, then unattributed rows, then agents. | Measure structuredContent with long names and shared hosts. Count host omissions if host metadata alone exceeds budget. |
 
 ## Non-goals
 

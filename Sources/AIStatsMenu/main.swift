@@ -1,10 +1,11 @@
 import AppKit
 import Combine
+import UserNotifications
 import StatsCore
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
     private let model = AppModel()
     private let clock = AnimationClock()
     private var theme = Theme(options: .current)
@@ -18,7 +19,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     private lazy var popupHost = makeHost("popover")
     private lazy var windowHost = makeHost("window")
 
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        UserDefaults.standard.bool(forKey: "originAlerts") ? [.banner, .list] : []
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if Bundle.main.bundleURL.pathExtension == "app", Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().delegate = self
+        }
         _ = PanelFonts.shared
         if let button = statusItem.button {
             button.target = self

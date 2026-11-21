@@ -17,6 +17,7 @@ USAGE
   aistats stats [--json]                          CPU, memory, disk, network, battery
   aistats top [--sort cpu|memory] [--limit N] [--json]
   aistats history [--minutes N] [--json]          trend recorded by the AIStats app (1–60 min)
+  aistats tree [--sort cpu|mem|disk]               process tree and subtree totals
   aistats agents [--json] [--calls N] [--no-attribute]  connected agents and their recent calls
   aistats mcp [--name NAME]                       run the MCP server on stdio
   aistats status [AGENT|all] [--json]             is the MCP server registered with each agent
@@ -137,6 +138,13 @@ func run() throws {
         } else {
             print("No history for the last \(minutes) minutes. Start the AIStats app to record it: open -b \(AIStatsPaths.appBundleIdentifier)")
         }
+
+    case "tree":
+        guard args.flags.isEmpty, Set(args.options.keys).isSubset(of: ["sort"]),
+              let metric = OriginMetric.treeSort(args.options["sort"] ?? "cpu") else {
+            throw CLIError("usage: aistats tree [--sort cpu|mem|disk]")
+        }
+        print(ProcessTree.measure(store: ActivityStore()).text(sort: metric))
 
     case "agents":
         let activity = ActivityStore()

@@ -108,7 +108,7 @@ private func structured(_ r: [String: Any]?) -> [String: Any]? {
         h.send(["jsonrpc": "2.0", "id": 1, "method": "tools/list"])
         let tools = try #require((h.response(1)?["result"] as? [String: Any])?["tools"] as? [[String: Any]])
         #expect(tools.map { $0["name"] as? String } == ["get_system_stats", "get_top_processes", "get_stats_history", "diagnose_system",
-                                                      "find_processes", "track_processes", "wait_for", "get_environment", "get_agent_sessions"])
+                                                      "find_processes", "track_processes", "wait_for", "get_environment", "get_process_tree", "get_agent_sessions"])
         h.call(2, "find_processes", ["name": "*", "match": "glob", "limit": 15])
         let found = try #require(h.response(2))
         #expect((structured(found)?["processes"] as? [Any])?.count == 15)

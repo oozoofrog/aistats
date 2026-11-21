@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import UserNotifications
 import StatsCore
 
 struct CPUPoint: Equatable, Sendable {
@@ -12,6 +13,7 @@ struct ScreenSnapshot {
     var sample: Snapshot?
     var cpuHistory: [CPUPoint] = []
     var topProcesses: [ProcessUsage] = []
+    var tree: ProcessTree?
     var agents: [ActivityStore.Presence] = []
     var recentCalls: [ActivityStore.Call] = []
     var recordingError: String?
@@ -67,6 +69,7 @@ final class AppModel {
     private let storeQueue = DispatchQueue(label: "aistats.store", qos: .utility)
     private let registrationQueue = DispatchQueue(label: "aistats.registration", qos: .userInitiated, attributes: .concurrent)
     private let activityPoll = ActivityPoll()
+    private let crossings = OriginCrossings()
     private let processGate: ProcessGeneration
     private var timer: Timer?
     private var pointID: UInt64 = 0
@@ -82,7 +85,8 @@ final class AppModel {
             refresh()
             return true
         case .last:
-            if !screen.topProcesses.isEmpty {
+            if !screen.topProcesses.isEmpty || screen.tree != nil {
+                screen.tree = nil
                 screen.topProcesses = []
                 publishScreen()
             }
@@ -129,16 +133,41 @@ final class AppModel {
 
     func refresh() {
         let generation = processGate.ticket()
-        samplerQueue.async { [weak self, sampler, processGate] in
+        let sessions = screen.agents
+        let rule = OriginAlertRule.current()
+        samplerQueue.async { [weak self, sampler, processGate, crossings] in
             let before = sampler.slowMetricReads
-            var snapshot = sampler.sample { enumerate in
-                processGate.enumerate(generation, enumerate)
+            var entries: [Proc.Entry] = []
+            var snapshot = sampler.sample { _ in
+                processGate.enumerate(generation) {
+                    entries = Proc.currentUserTable() ?? []
+                    return entries.map(\.pid)
+                }
             }
             if sampler.slowMetricReads != before { PanelTrace.marker("slow-sample") }
             let top = sampler.processCPUIsFresh
                 ? sampler.topProcesses(sortedBy: .cpu, limit: 3, from: snapshot.topProcesses ?? [], includeParent: false) : []
+            var tree: ProcessTree?
+            var alerts: [AgentSessions.Busy] = []
+            let processes = snapshot.topProcesses ?? []
+            let fresh = sampler.processCPUIsFresh && processGate.allows(generation)
+            let crossed = crossings.crossed(processes: fresh ? processes : [], rule: rule, generation: generation)
+            if fresh {
+                tree = ProcessTree(entries: entries, processes: processes, sessions: sessions, at: snapshot.timestamp)
+                if !crossed.isEmpty, let rule {
+                    let origins = OriginSnapshot(processes: processes, entries: entries, sessions: sessions)
+                    alerts = crossed.compactMap { origins.explain($0, metric: rule.metric) }
+                }
+            }
             snapshot.topProcesses = nil
-            DispatchQueue.main.async { self?.apply(snapshot: snapshot, top: top, generation: generation) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if fresh && processGate.allows(generation) {
+                    self.screen.tree = tree
+                    if !alerts.isEmpty, let rule { self.notify(alerts, rule: rule, generation: generation) }
+                }
+                self.apply(snapshot: snapshot, top: top, generation: generation)
+            }
         }
         storeQueue.async { [weak self, activity, activityPoll] in
             guard activityPoll.due(token: activity.changeToken(), recheck: Self.agentRecheckInterval) else { return }
@@ -153,6 +182,21 @@ final class AppModel {
                 self.screen.recentCalls = calls
                 self.publishScreen()
                 self.statusUpdates.send()
+            }
+        }
+    }
+
+    private func notify(_ rows: [AgentSessions.Busy], rule: OriginAlertRule, generation: UInt64?) {
+        Task { @MainActor in
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
+            guard settings.authorizationStatus == .authorized else { return }
+            for row in rows {
+                guard processGate.allows(generation), OriginAlertRule.current() == rule else { return }
+                let content = UNMutableNotificationContent()
+                content.title = "\(row.name) · \(rule.metric.label) \(rule.metric.reading(row))"
+                content.body = row.originLabel
+                try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
             }
         }
     }

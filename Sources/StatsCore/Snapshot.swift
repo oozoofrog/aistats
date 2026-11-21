@@ -108,6 +108,11 @@ public struct Snapshot: Codable, Sendable {
 }
 
 public struct ProcessUsage: Codable, Sendable, Hashable {
+    enum CodingKeys: String, CodingKey { case startToken, ppid, pid, name, cpuPercent, memoryBytes }
+    var cpuPaired = false
+    var readBytes: UInt64?
+    var writtenBytes: UInt64?
+    var diskRate: Double?
     public var startToken: String?
     public var ppid: Int32?
     public var pid: Int32

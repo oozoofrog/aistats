@@ -193,5 +193,30 @@
     "arguments": {
       "limit": 3
     }
+  },
+  {
+    "prompt": "Show the five largest agent process subtrees by memory in JSON, with their shared hosts.",
+    "name": "get_process_tree",
+    "arguments": {
+      "sort": "mem",
+      "format": "json",
+      "limit": 5
+    }
+  },
+  {
+    "prompt": "Give me a text process tree ranked by disk I/O.",
+    "name": "get_process_tree",
+    "arguments": {
+      "sort": "disk",
+      "format": "text"
+    }
+  },
+  {
+    "prompt": "Rank the first two agent process trees by CPU and show their children.",
+    "name": "get_process_tree",
+    "arguments": {
+      "sort": "cpu",
+      "limit": 2
+    }
   }
 ]

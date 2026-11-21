@@ -307,6 +307,7 @@ public final class MCPServer: @unchecked Sendable {
     OS, chip and toolchain versions: get_environment
     Past resource trends: get_stats_history
     List sessions and attribute busy processes: get_agent_sessions
+    Show the process tree: get_process_tree
     History needs the menu app. A wait lasts at most 55 seconds. Keep a startToken to guard against PID reuse. Structured content fits 4096 bytes. Omission counts mark trimmed lists.
     """
 
@@ -332,6 +333,11 @@ public final class MCPServer: @unchecked Sendable {
         "match": ["type": "string", "enum": ["exact", "glob"], "default": "exact", "description": "How name/path are compared."],
         "argsContain": ["type": "string", "minLength": 1, "maxLength": 128,
                         "description": "With name or path: only processes with an argument (after argv[0]) containing this text, case-sensitive, e.g. --daemon. Processes whose arguments can't be read don't match (counted in argsUnreadable)."],
+    ]
+
+    private static let originIdentity: [String: Any] = [
+        "type": "object", "required": ["pid", "startToken"], "additionalProperties": false,
+        "properties": ["pid": ["type": "integer", "minimum": 1], "startToken": ["type": "string"]]
     ]
 
     private static let compactSelectorProperties: [String: Any] = selectorProperties.mapValues { field in
@@ -447,9 +453,21 @@ public final class MCPServer: @unchecked Sendable {
             "annotations": ["readOnlyHint": true, "openWorldHint": false],
         ],
         [
+            "name": "get_process_tree", "title": "Process tree",
+            "description": "Show process trees, agent subtree CPU, memory footprint or disk I/O, shared hosts and unattributed work.",
+            "inputSchema": ["type": "object", "properties": [
+                "sort": ["type": "string", "enum": ["cpu", "mem", "disk"], "default": "cpu"],
+                "limit": ["type": "integer", "minimum": 1, "maximum": 15, "default": 5],
+                "format": ["type": "string", "enum": ["text", "json"], "default": "json"]]],
+            "annotations": ["readOnlyHint": true, "openWorldHint": false]
+        ],
+        [
             "name": "get_agent_sessions",
             "description": "List live sessions, recent calls and CPU leaders by nearest agent. Subagents share their parent agent.",
             "inputSchema": ["type": "object", "properties": [
+                "origin": ["type": "boolean", "default": false, "description": "Include launch chains. Select one metric and at most one session or ancestor."],
+                "sort": ["type": "string", "enum": ["cpu", "memory", "disk"]],
+                "session": originIdentity, "ancestor": originIdentity,
                 "calls": ["type": "integer", "minimum": 0, "maximum": 20, "default": 5],
                 "attribute": ["type": "boolean", "default": true],
                 "limit": ["type": "integer", "minimum": 1, "maximum": 15, "default": 10]
@@ -464,6 +482,26 @@ public final class MCPServer: @unchecked Sendable {
         touchPresence()
         do {
             switch name {
+            case "get_process_tree":
+                guard Set(args.keys).isSubset(of: ["sort", "format", "limit"]),
+                      args.values.allSatisfy({ !($0 is NSNull) }),
+                      args["limit"] == nil || args["limit"] is NSNumber else { throw ToolError("Invalid tree options") }
+                let sort = try Args.optionalString(args, "sort") ?? "cpu"
+                let format = try Args.optionalString(args, "format") ?? "json"
+                guard let metric = OriginMetric.treeSort(sort), ["text", "json"].contains(format) else { throw ToolError("Invalid tree sort or format") }
+                let limit = try Args.int(args, "limit", default: 5, in: 1...15)
+                record(name)
+                var report = ProcessTreeReport(ProcessTree.measure(store: activity), metric: metric, limit: limit)
+                repeat {
+                    let body: [String: Any]
+                    if format == "text" {
+                        let fields: [String: Any] = ["text": report.text(), "truncated": report.truncated,
+                            "agentsOmitted": report.agentsOmitted, "unattributedOmitted": report.unattributedOmitted, "hostsOmitted": report.hostsOmitted]
+                        body = toolResult(text: "Process tree.", data: try JSONSerialization.data(withJSONObject: fields))
+                    } else { body = try toolResult(text: "Process tree.", json: report) }
+                    if fits(body, id: id) { return result(id: id, body) }
+                } while report.trim()
+                throw ToolError("Process tree exceeds response budget")
             case "get_agent_sessions":
                 for key in ["calls", "limit"] where args[key] != nil && !(args[key] is NSNumber) {
                     throw ToolError("\(key) requires an integer")
@@ -472,8 +510,10 @@ public final class MCPServer: @unchecked Sendable {
                 let calls = try Args.int(args, "calls", default: 5, in: 0...20)
                 let attribute = try Args.bool(args, "attribute", default: true)
                 let limit = try Args.int(args, "limit", default: 10, in: 1...15)
+                let (origin, metric, filter) = try Args.originOptions(args, attribute: attribute)
                 record(name)
-                var report = AgentSessions.collect(store: activity, caller: agentName, calls: calls, attribute: attribute, limit: limit)
+                var report = AgentSessions.collect(store: activity, caller: agentName, calls: calls, attribute: attribute, limit: limit,
+                                                   origin: origin, sort: metric, filter: filter)
                 let line = "Agent sessions and recent calls."
                 try report.fit { try fits(toolResult(text: line, json: $0), id: id) }
                 return result(id: id, try toolResult(text: line, json: report))
@@ -863,6 +903,29 @@ package enum Args {
         guard let raw = args[key], !(raw is NSNull) else { return nil }
         guard let s = raw as? String else { throw ToolError("\(key) must be a string") }
         return s
+    }
+
+    static func originOptions(_ args: [String: Any], attribute: Bool) throws -> (Bool, OriginMetric, OriginFilter) {
+        guard !(args["origin"] is NSNull) else { throw ToolError("origin requires a boolean") }
+        let enabled = try bool(args, "origin", default: false)
+        let keys = ["sort", "session", "ancestor"]
+        guard enabled ? attribute : keys.allSatisfy({ args[$0] == nil }) else {
+            throw ToolError("Origin options require origin and attribution")
+        }
+        guard args["session"] == nil || args["ancestor"] == nil else { throw ToolError("Select one session or ancestor") }
+        guard !(args["sort"] is NSNull), let metric = OriginMetric(rawValue: try optionalString(args, "sort") ?? "cpu") else {
+            throw ToolError("sort must be cpu, memory or disk")
+        }
+        func identity(_ field: String) throws -> Proc.Key? {
+            guard let raw = args[field] else { return nil }
+            guard let pair = raw as? [String: Any], Set(pair.keys) == ["pid", "startToken"],
+                  let n = pair["pid"] as? NSNumber, let value = int(n), let pid = Int32(exactly: value), pid > 0,
+                  let token = pair["startToken"] as? String, let start = UInt64(token), String(start) == token, start > 0 else {
+                throw ToolError("Origin selectors require pid and startToken")
+            }
+            return Proc.Key(pid: pid, start: start)
+        }
+        return try (enabled, metric, OriginFilter(session: identity("session"), ancestor: identity("ancestor")))
     }
 
     static func selector(_ args: [String: Any]) throws -> ProcessSelector {

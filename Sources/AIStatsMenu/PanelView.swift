@@ -105,6 +105,7 @@ struct PanelView: View {
                     .foregroundStyle(content.theme.detail)
             }
             if !screen.topProcesses.isEmpty { processes }
+            if let tree = screen.tree { OriginPanel(tree: tree) }
             agents
             if !screen.otherClients.isEmpty { clients }
             if !screen.recentCalls.isEmpty { calls }

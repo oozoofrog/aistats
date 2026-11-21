@@ -19,7 +19,7 @@ public final class SystemSampler: @unchecked Sendable {
     private var lastNet: (rx: UInt64, tx: UInt64)?
     private var netBuffer: [UInt8] = []
     /// Per pid: process start time (detects pid reuse), CPU time at the last sample, cached name.
-    private var procCache: [Int32: (start: UInt64, cpuNs: UInt64, name: String)] = [:]
+    private var procCache: [Int32: (start: UInt64, cpuNs: UInt64, name: String, read: UInt64, written: UInt64)] = [:]
     var readParent: (Int32) -> Int32? = Proc.parent
     private var lastProcTime: UInt64?
     /// Process CPU percentages are only meaningful when the previous process sample is recent.
@@ -310,7 +310,7 @@ public final class SystemSampler: @unchecked Sendable {
         // Over a very short window (e.g. a refresh right after the timer fired) a few
         // milliseconds of CPU read as huge percentages, so such readings are not "fresh".
         processCPUIsFresh = wall >= Self.minProcessInterval * 1e9 && wall <= Self.maxProcessInterval * 1e9
-        var next: [Int32: (start: UInt64, cpuNs: UInt64, name: String)] = [:]
+        var next: [Int32: (start: UInt64, cpuNs: UInt64, name: String, read: UInt64, written: UInt64)] = [:]
         next.reserveCapacity(procCache.count)
         var result: [ProcessUsage] = []
         for pid in pids {
@@ -326,13 +326,23 @@ public final class SystemSampler: @unchecked Sendable {
             let start = info.ri_proc_start_abstime
             let cached = procCache[pid].flatMap { $0.start == start ? $0 : nil } // nil if the pid was reused
             let name = cached?.name ?? Self.processName(pid)
-            next[pid] = (start, cpuNs, name)
+            next[pid] = (start, cpuNs, name, info.ri_diskio_bytesread, info.ri_diskio_byteswritten)
             var percent = 0.0
             if processCPUIsFresh, let prev = cached?.cpuNs, cpuNs >= prev {
                 percent = Double(cpuNs - prev) / wall * 100
             }
-            result.append(ProcessUsage(startToken: start == 0 ? nil : String(start), pid: pid, name: name, cpuPercent: Self.round1(percent),
-                                       memoryBytes: info.ri_phys_footprint))
+            var row = ProcessUsage(startToken: start == 0 ? nil : String(start), pid: pid, name: name, cpuPercent: Self.round1(percent),
+                                       memoryBytes: info.ri_phys_footprint)
+            row.cpuPaired = processCPUIsFresh && cached.map { cpuNs >= $0.cpuNs } == true
+            if processCPUIsFresh, let cached,
+               info.ri_diskio_bytesread >= cached.read, info.ri_diskio_byteswritten >= cached.written {
+                let read = info.ri_diskio_bytesread - cached.read
+                let written = info.ri_diskio_byteswritten - cached.written
+                row.readBytes = read
+                row.writtenBytes = written
+                row.diskRate = (Double(read) + Double(written)) / (wall / 1e9)
+            }
+            result.append(row)
         }
         procCache = next
         lastProcTime = now

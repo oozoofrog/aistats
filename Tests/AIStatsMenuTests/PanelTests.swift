@@ -314,3 +314,18 @@ func toolLabelsMatchBaseline(input: (tool: String, detail: String?, label: Strin
     token.invalidate()
     motion.pause(closing: true)
 }
+
+@Test func originAlertsRequireObservedCrossingsAndResetWhenExposureChanges() throws {
+    let monitor = OriginCrossings()
+    let rule = OriginAlertRule(metric: .memory, threshold: 100)
+    func count(_ bytes: Int, generation: UInt64 = 1, enabled: Bool = true) throws -> Int {
+        let data = Data("{\"pid\":7,\"startToken\":\"9\",\"name\":\"worker\",\"cpuPercent\":0,\"memoryBytes\":\(bytes)}".utf8)
+        let row = try JSONDecoder().decode(ProcessUsage.self, from: data)
+        return monitor.crossed(processes: [row], rule: enabled ? rule : nil, generation: generation).count
+    }
+    #expect(try [count(20),count(120),count(150),count(10),count(110)] == [0,1,0,0,1])
+    #expect(try count(10) == 0)
+    #expect(try count(130, generation: 2) == 0)
+    #expect(try count(10, enabled: false) == 0)
+    #expect(try count(150) == 0)
+}
