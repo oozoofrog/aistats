@@ -35,6 +35,10 @@ struct OriginAlertRule: Equatable {
     let metric: OriginMetric
     let threshold: Double
 
+    static var supportsNotifications: Bool {
+        Bundle.main.bundleURL.pathExtension == "app" && Bundle.main.bundleIdentifier != nil
+    }
+
     static func current(_ defaults: UserDefaults = .standard) -> Self? {
         guard defaults.bool(forKey: "originAlerts"),
               let metric = OriginMetric(rawValue: defaults.string(forKey: "originMetric") ?? "cpu") else { return nil }
@@ -95,6 +99,10 @@ struct OriginPanel: View {
     private func toggle(_ value: Bool) {
         message = ""
         guard value else { enabled = false; return }
+        guard OriginAlertRule.supportsNotifications else {
+            message = "알림을 사용하려면 AIStats 앱을 여세요."
+            return
+        }
         requesting = true
         Task { @MainActor in
             defer { requesting = false }

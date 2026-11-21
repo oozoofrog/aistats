@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if Bundle.main.bundleURL.pathExtension == "app", Bundle.main.bundleIdentifier != nil {
+        if OriginAlertRule.supportsNotifications {
             UNUserNotificationCenter.current().delegate = self
         }
         _ = PanelFonts.shared

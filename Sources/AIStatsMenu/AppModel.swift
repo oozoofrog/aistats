@@ -187,6 +187,7 @@ final class AppModel {
     }
 
     private func notify(_ rows: [AgentSessions.Busy], rule: OriginAlertRule, generation: UInt64?) {
+        guard OriginAlertRule.supportsNotifications else { return }
         Task { @MainActor in
             let center = UNUserNotificationCenter.current()
             let settings = await center.notificationSettings()

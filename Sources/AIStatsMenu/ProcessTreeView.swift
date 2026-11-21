@@ -118,9 +118,9 @@ struct ProcessTreeView: View {
                 Text("시작 \(node.started.formatted()) · 경과 \(Int(max(0, tree.observedAt.timeIntervalSince(node.started))))초")
                 if let reason = node.reason { Text(reason == "no_agent_ancestor" ? "launchd에서 추적 종료" : reason == "walk_limit" ? "추적 한도 도달" : "상위 프로세스를 확인할 수 없음") }
                 ForEach(OriginMetric.allCases, id: \.self) { m in
-                    Text("\(m.label) · 자체 \(item.pids.count > 1 ? "—" : node.own.display(m)) / 하위 합계 \(tree.total(item.pids).display(m, total: true))")
+                    Text("\(m.label) · 자체 \(node.own.display(m)) / 하위 합계 \(tree.total(item.pids).display(m, total: true))")
                 }
-                Text("메모리 출처 · physical footprint").font(.caption)
+                Text("메모리 출처 · proc_pid_rusage (ri_phys_footprint)").font(.caption)
             }
         }
     }
@@ -163,7 +163,7 @@ struct ProcessTreeView: View {
             }
             Button { activate(item) } label: {
                 HStack {
-                    Text(item.title).foregroundStyle(agent ? Color.green : heavy ? Color.orange : server ? Color.secondary : Color.primary)
+                    Text(item.title).foregroundStyle(agent ? Color.green : server ? Color.secondary : heavy ? Color.orange : Color.primary)
                     if let node, !item.link {
                         Text("\(item.pids.count > 1 ? "—" : node.own.display(metric)) / \(sum.display(metric, total: true))")
                         ProgressView(value: min(1, (sum.value(metric) ?? 0) / max(1, scale))).frame(width: 35).accessibilityHidden(true)

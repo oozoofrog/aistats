@@ -23,9 +23,9 @@ The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" in this docu
 
 ## Background and evidence
 
-- Presence identifies the server. SDD 0009 records the parent's identity at initialization. Its CPU rows give the first matching agent PID or a reason. [Store.swift:280](../../Sources/StatsCore/Store.swift#L280) · [MCPServer.swift:300](../../Sources/StatsCore/MCPServer.swift#L300) · [AGT-030 through AGT-041](0009-agent-sessions-mcp.md#attribution)
-- The current-user table supplies parent PIDs and start times. A detached job can acquire PID 1 as its parent. The lost link cannot be recovered from this table. [Proc.swift:155](../../Sources/StatsCore/Proc.swift#L155) · [SDD 0009 observations](0009-agent-sessions-mcp.md#background-and-evidence)
-- The sampler already reads RUSAGE_INFO_V4. The macOS SDK declares proc_pid_rusage and the ri_diskio_bytesread and ri_diskio_byteswritten fields. In a current-user probe, a synchronized 2 MiB file write increased the written counter by 2,097,152 bytes. [SystemSampler.swift:314](../../Sources/StatsCore/SystemSampler.swift#L314)
+- Presence identifies the server. SDD 0009 records the parent's identity at initialization. Its CPU rows give the first matching agent PID or a reason. [Store.swift:332](../../Sources/StatsCore/Store.swift#L332) · [MCPServer.swift:321](../../Sources/StatsCore/MCPServer.swift#L321) · [AGT-030 through AGT-041](0009-agent-sessions-mcp.md#attribution)
+- The current-user table supplies parent PIDs and start times. A detached job can acquire PID 1 as its parent. The lost link cannot be recovered from this table. [Proc.swift:162](../../Sources/StatsCore/Proc.swift#L162) · [SDD 0009 observations](0009-agent-sessions-mcp.md#background-and-evidence)
+- The sampler already reads RUSAGE_INFO_V4. The macOS SDK declares proc_pid_rusage and the ri_diskio_bytesread and ri_diskio_byteswritten fields. In a current-user probe, a synchronized 2 MiB file write increased the written counter by 2,097,152 bytes. [SystemSampler.swift:338](../../Sources/StatsCore/SystemSampler.swift#L338)
 - The panel specification shows a CPU table. SDD 0003 adds process identity. Neither provides origin search. [Panel component inventory](0001-cyberpunk-panel.md#component-inventory) · [Top row requirements](0003-top-process-identity.md#requirements)
 
 ## Tool contract
