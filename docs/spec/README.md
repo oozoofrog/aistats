@@ -29,6 +29,7 @@
 - [ADR 0005 · Design tokens in code](../adr/0005-design-tokens-in-code.md)
 - [ADR 0006 · Visual verification](../adr/0006-visual-verification.md)
 - [ADR 0007 · Confirmation dialog hosting](../adr/0007-confirmation-dialog-hosting.md)
+- [ADR 0008 · Cross-session track cursor storage](../adr/0008-cross-session-track-cursors.md)
 
 ## Document conventions
 

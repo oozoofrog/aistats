@@ -27,6 +27,7 @@ public final class MCPServer: @unchecked Sendable {
     private let history: HistoryStore
     private let activity: ActivityStore
     private let tracks: TrackManager
+    private let snapshotDelta = SnapshotDelta()
     private let sampler = SystemSampler()
     private let directory = ProcessDirectory()
     private let pid = ProcessInfo.processInfo.processIdentifier
@@ -336,7 +337,7 @@ public final class MCPServer: @unchecked Sendable {
             "name": "get_system_stats",
             "title": "System stats",
             "description": "Current CPU, memory (with pressure and swap), disk free space, network throughput, battery and thermal state of this Mac, measured over about half a second, plus the top 5 processes by CPU. For a yes/no 'is something wrong' answer use diagnose_system instead.",
-            "inputSchema": ["type": "object", "properties": [String: Any]()],
+            "inputSchema": ["type": "object", "properties": ["since": ["type": "string", "description": "Return changes since this snapshot cursor."]]],
             "annotations": ["readOnlyHint": true, "openWorldHint": false],
         ],
         [
@@ -392,6 +393,7 @@ public final class MCPServer: @unchecked Sendable {
             "inputSchema": [
                 "type": "object",
                 "properties": selectorProperties.merging([
+                    "since": ["type": "string", "description": "Status changes since this track cursor."],
                     "action": ["type": "string", "enum": ["start", "status", "stop", "list"]],
                     "trackId": ["type": "string", "description": "For status and stop."],
                     "includeChildren": ["type": "boolean", "default": false],
@@ -472,7 +474,17 @@ public final class MCPServer: @unchecked Sendable {
                 record(name)
                 var snapshot = sampler.measure(interval: 0.5, includeProcesses: true)
                 snapshot.topProcesses = sampler.topProcesses(sortedBy: .cpu, limit: 5, from: snapshot.topProcesses ?? [])
-                return result(id: id, try toolResult(text: snapshot.summary, data: snapshot.structuredData(using: Self.encoder)))
+                let raw = try snapshot.structuredData(using: Self.encoder)
+                let fields = try JSONSerialization.jsonObject(with: raw) as! [String: Any]
+                func body(_ object: [String: Any]) throws -> [String: Any] {
+                    let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+                    let unchanged = object["unchanged"] as? [String]
+                    let summary = unchanged.map { "Unchanged: " + $0.joined(separator: ", ") } ?? snapshot.summary
+                    return toolResult(text: summary, data: data)
+                }
+                let projected = try snapshotDelta.response(fields, since: Args.optionalString(args, "since"),
+                                                            now: ProcessInfo.processInfo.systemUptime) { try fits(body($0), id: id) }
+                return result(id: id, try body(projected))
 
             case "get_top_processes":
                 let sort = try ProcessSort(rawValue: Args.string(args, "sort") ?? "cpu").orThrow("sort must be cpu or memory")
@@ -560,6 +572,7 @@ public final class MCPServer: @unchecked Sendable {
         guard args["port"] == nil else { throw ToolError("track_processes does not accept port") }
         let name = "track_processes"
         guard let action = Args.string(args, "action") else { throw ToolError("action is required: start, status, stop or list") }
+        if args["since"] != nil && action != "status" { throw ToolError("since requires track status") }
         switch action {
         case "start":
             let selector = try Args.selector(args)
@@ -577,7 +590,15 @@ public final class MCPServer: @unchecked Sendable {
             record(name, action)
             if action == "stop" { return try trackResponse(try tracks.stop(trackID), id: id) }
             guard let r = tracks.status(trackID) else { throw TrackError.notFound(trackID) }
-            return try trackResponse(r, id: id)
+            func body(_ fields: [String: Any]) throws -> [String: Any] {
+                let data = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys, .withoutEscapingSlashes])
+                let summary = (fields["unchanged"] as? [String]).map { "Unchanged: " + $0.joined(separator: ", ") } ?? r.summaryLine
+                return toolResult(text: summary, data: data)
+            }
+            let fields = try TrackDelta.response(report: r, home: tracks.home, since: Args.optionalString(args, "since")) { [self] fields in
+                try Self.encodeLine(result(id: id, body(fields))).count
+            }
+            return result(id: id, try body(fields))
         case "list":
             record(name, "list")
             let rows = tracks.list()

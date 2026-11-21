@@ -1431,8 +1431,13 @@ public final class TrackManager: @unchecked Sendable {
         let ids = storedIDs(home: home)
         guard ids.count > maxStoredReports else { return }
         for id in ids.dropFirst(maxStoredReports) {
-            if let s = loadStored(id, home: home), s.report.state == "running", ActivityStore.isAlive(s.sessionPid) { continue }
-            try? FileManager.default.removeItem(at: tracksDir(home).appendingPathComponent(id + ".json"))
+            try? TrackDelta.withStoreLock(home, exclusive: true) {
+                if let s = loadStored(id, home: home), s.report.state == "running", ActivityStore.isAlive(s.sessionPid) { return }
+                try FileManager.default.removeItem(at: tracksDir(home).appendingPathComponent(id + ".json"))
+                let index = TrackDelta.directory(id, home: home)
+                try? FileManager.default.removeItem(at: index.appendingPathComponent("index.json"))
+                rmdir(index.path)
+            }
         }
     }
 }

@@ -15,7 +15,7 @@ Requires macOS 14 or later. Only the current user's processes are readable (othe
 | Tool | Use it for |
 |---|---|
 | `diagnose_system` | The Mac feels slow, or before a build/test/heavy job: returns the likely cause (CPU, load average, memory pressure, thermal throttling, low disk, battery) and the busiest processes |
-| `get_system_stats` | CPU, memory with pressure and swap, disk, network, battery, thermal state |
+| `get_system_stats` | CPU, memory with pressure and swap, disk, network, battery, thermal state. Pass a returned cursor as `since` for changes |
 | `get_top_processes` | Top processes by CPU or memory footprint, with PID, start token and readable parent PID |
 | `find_processes` | Look up processes by TCP listening port, pid, executable name or path (exact or glob, optional `argsContain`); returns a `startToken` that guards against pid reuse |
 | `track_processes` | Watch processes in the background for up to 2 hours: CPU and memory min/avg/max/last, lifetime peak footprint, restarts, child spawns per minute and per executable, CPU spikes with busiest threads and an optional `sample` capture |

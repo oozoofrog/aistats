@@ -173,4 +173,4 @@ Requirements use the ASD-STE100 sentence rules and the Terms below. Each active 
 - The 600-second Cursor lifetime and the limit of 8 Cursors per Session are proposals.
 - It is not known whether models merge a Delta Result with the Base correctly. It is not known how often the Base is gone from the context. An agent evaluation is needed.
 - The 400-byte and 800-byte targets in DLT-033 and DLT-034 are estimates from the field lists. They were not measured.
-- A track Cursor that stays usable across Sessions must encode the Base state, or the server must store it with the track. The choice is open. DLT-003 limits the Cursor length.
+- [ADR 0008](../adr/0008-cross-session-track-cursors.md) defines a bounded index for cross-session track status.
