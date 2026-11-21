@@ -18,6 +18,7 @@
 - [SDD 0014 · Developer Storage Breakdown](0014-dev-storage-breakdown.md) · [#13](https://github.com/oozoofrog/aistats/issues/13)
 - [SDD 0015 · Job Duration Baselines](0015-job-duration-baselines.md) · [#14](https://github.com/oozoofrog/aistats/issues/14)
 - [SDD 0016 · Simulator Resources](0016-simulator-resources.md) · [#15](https://github.com/oozoofrog/aistats/issues/15)
+- [SDD 0017 · Live Process Origin](0017-process-origin.md) · [#16](https://github.com/oozoofrog/aistats/issues/16)
 
 ## Architecture decisions
 

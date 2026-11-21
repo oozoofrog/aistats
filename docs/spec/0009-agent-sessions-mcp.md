@@ -88,7 +88,7 @@ Live observations on one development Mac (not repeated for this document):
 
 | ID | Requirement | Acceptance check |
 | --- | --- | --- |
-| AGT-030 | With `attribute: true`, the result MUST contain `busy`, the top `limit` processes by CPU over one 1.0 s measurement. | Stdio probe with `limit: 3` during a CPU load. Verify at most three rows in descending `cpuPercent` order. |
+| AGT-030 | With `attribute: true`, the result MUST contain `busy`, the top `limit` processes over one 1.0 s measurement, ranked by CPU unless SDD 0017 selects another metric. | Stdio probe with `limit: 3` during a CPU load. Verify at most three rows in descending `cpuPercent` order. |
 | AGT-031 | Each `busy` row MUST contain `pid`, `startToken`, `name`, `cpuPercent`, and `memoryBytes`. | Validate each row. Compare `startToken` with `find_processes` for the same pid. |
 | AGT-032 | The Ancestor Walk MUST start at the Busy Process itself. | Fixture test: the Agent Process is the Busy Process. Verify that the row has its own `agentPid`. |
 | AGT-033 | The Ancestor Walk MUST stop at the first live Agent Process. | Fixture test: agent B runs under a shell of agent A. A child of B is busy. Verify `agentPid` equals B. |
@@ -114,7 +114,7 @@ Live observations on one development Mac (not repeated for this document):
 | ID | Requirement | Acceptance check |
 | --- | --- | --- |
 | AGT-050 | `structuredContent` MUST fit the response budget of [SDD 0005](0005-response-size-budget.md). | Stdio probe with 8 fixture Sessions, `calls: 20`, and `limit: 15`. Measure the `structuredContent` bytes. |
-| AGT-051 | To fit the budget, the server MUST remove oldest calls first, then lowest-CPU `busy` rows. | Same probe. Verify the removal order and `truncated: true`. |
+| AGT-051 | To fit the budget, the server MUST remove oldest calls first, then the last-ranked `busy` rows. | Same probe. Verify the removal order and `truncated: true`. |
 | AGT-052 | The summary text MUST NOT contain a fact that is absent from `structuredContent`. | Apply the check of [SDD 0004](0004-summary-facts-in-json.md) to this tool. |
 | AGT-053 | The activity log MUST record each `get_agent_sessions` call with the tool name. | Call the tool. Read the newest activity log row. |
 
@@ -136,6 +136,8 @@ Live observations on one development Mac (not repeated for this document):
 - A process stop or kill action.
 
 ## Dependencies and related specs
+
+- [SDD 0017](0017-process-origin.md) extends the live walk with chain details, resource rankings, origin search, panel display and optional notifications.
 
 - [SDD 0003](0003-top-process-identity.md): `startToken` and `ppid` in process rows. `busy` rows SHOULD use the same field names.
 - [SDD 0004](0004-summary-facts-in-json.md): summary facts in JSON.
