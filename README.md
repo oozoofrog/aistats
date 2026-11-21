@@ -17,9 +17,9 @@ Requires macOS 14 or later. Only the current user's processes are readable (othe
 | `diagnose_system` | The Mac feels slow, or before a build/test/heavy job: returns the likely cause (CPU, load average, memory pressure, thermal throttling, low disk, battery) and the busiest processes |
 | `get_system_stats` | CPU, memory with pressure and swap, disk, network, battery, thermal state |
 | `get_top_processes` | Top processes by CPU or memory footprint |
-| `find_processes` | Look up processes by pid, executable name or path (exact or glob, optional `argsContain`); returns a `startToken` that guards against pid reuse |
+| `find_processes` | Look up processes by TCP listening port, pid, executable name or path (exact or glob, optional `argsContain`); returns a `startToken` that guards against pid reuse |
 | `track_processes` | Watch processes in the background for up to 2 hours: CPU and memory min/avg/max/last, lifetime peak footprint, restarts, child spawns per minute and per executable, CPU spikes with busiest threads and an optional `sample` capture |
-| `wait_for` | Wait (up to 55 s per call) for `cpu_idle`, `process_exit` or `memory_pressure_normal` instead of sleeping; on timeout it says what is still busy |
+| `wait_for` | Wait (up to 55 s per call) for `cpu_idle`, `process_exit` `memory_pressure_normal` or `port_listening` instead of sleeping; on timeout it says what is still busy |
 | `get_environment` | macOS version, chip, RAM, cores, Xcode and Swift versions |
 | `get_stats_history` | Trend over the last hour (recorded by the menu bar app) |
 

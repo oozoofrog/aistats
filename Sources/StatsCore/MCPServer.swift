@@ -305,6 +305,8 @@ public final class MCPServer: @unchecked Sendable {
 
     // MARK: Tools
 
+    private static let portProperty: [String: Any] = ["type": "integer", "minimum": 1, "maximum": 65535]
+
     private static let selectorProperties: [String: Any] = [
         "pid": ["type": "integer", "minimum": 1, "description": "Process id."],
         "startToken": ["type": "string", "description": "From find_processes; with pid, guards against pid reuse."],
@@ -362,10 +364,10 @@ public final class MCPServer: @unchecked Sendable {
         [
             "name": "find_processes",
             "title": "Find processes",
-            "description": "Look up processes by exactly one of pid, name (executable file name) or path (absolute executable path); name/path match exact (default, name case-insensitive) or glob. Returns pid, startToken (identifies the instance across pid reuse), name, ppid and memory footprint; path only when you matched by path. Use instead of ps | grep. Fields that can't be read are listed in unreadable, never reported as 0.",
+            "description": "Look up by TCP listening port or exactly one of pid, name (executable file name) or path (absolute executable path); name/path match exact (default, name case-insensitive) or glob. Returns pid, startToken (identifies the instance across pid reuse), name, ppid and memory footprint; path only when you matched by path. A missing listener does not mean a free port. probeFree can briefly block another bind. Fields that can't be read are listed in unreadable, never reported as 0.",
             "inputSchema": [
                 "type": "object",
-                "properties": selectorProperties.merging(["limit": ["type": "integer", "minimum": 1, "maximum": 15, "default": 8]]) { a, _ in a },
+                "properties": selectorProperties.merging(["port": portProperty, "probeFree": ["type": "boolean", "default": false], "limit": ["type": "integer", "minimum": 1, "maximum": 15, "default": 8]]) { a, _ in a },
             ],
             "annotations": ["readOnlyHint": true, "openWorldHint": false],
         ],
@@ -397,7 +399,8 @@ public final class MCPServer: @unchecked Sendable {
             "inputSchema": [
                 "type": "object",
                 "properties": selectorProperties.merging([
-                    "condition": ["type": "string", "enum": ["cpu_idle", "process_exit", "memory_pressure_normal"]],
+                    "condition": ["type": "string", "enum": ["cpu_idle", "process_exit", "memory_pressure_normal", "port_listening"]],
+                    "port": portProperty,
                     "belowPercent": ["type": "number", "minimum": 0, "maximum": 10000, "default": 20],
                     "trackId": ["type": "string", "description": "cpu_idle for the members of a running track."],
                     "timeoutSeconds": ["type": "number", "minimum": 1, "maximum": 55, "default": 20],
@@ -464,10 +467,19 @@ public final class MCPServer: @unchecked Sendable {
                 return result(id: id, try leanResult(d.summaryLine, d))
 
             case "find_processes":
-                let selector = try Args.selector(args)
                 let limit = try Args.int(args, "limit", default: 8, in: 1...ProcessFinder.maxLimit)
-                record(name, "by \(selector.kind)" + Self.argsNote(selector))
-                var r = ProcessFinder.find(selector, limit: limit, directory: directory)
+                var r: FindResult
+                if args["port"] != nil {
+                    let port = try Args.port(args)
+                    let probe = try Args.bool(args, "probeFree", default: false)
+                    record(name, "by port")
+                    r = PortLookup.find(port, probeFree: probe, limit: limit)
+                } else {
+                    guard args["probeFree"] == nil else { throw ToolError("probeFree requires port") }
+                    let selector = try Args.selector(args)
+                    record(name, "by \(selector.kind)" + Self.argsNote(selector))
+                    r = ProcessFinder.find(selector, limit: limit, directory: directory)
+                }
                 // Long paths can push the rows past the budget: drop the smallest rows until it fits.
                 while r.processes.count > 1, (try fittedSize(id: id, r.summaryLine, r)) > Self.maxResponseBytes {
                     r.processes.removeLast()
@@ -500,6 +512,7 @@ public final class MCPServer: @unchecked Sendable {
     }
 
     private func trackTool(_ args: [String: Any], id: Any) throws -> [String: Any] {
+        guard args["port"] == nil else { throw ToolError("track_processes does not accept port") }
         let name = "track_processes"
         guard let action = Args.string(args, "action") else { throw ToolError("action is required: start, status, stop or list") }
         switch action {
@@ -584,6 +597,11 @@ public final class MCPServer: @unchecked Sendable {
         }
         waiter.start { [weak self] r in
             guard let self else { return }
+            var r = r
+            while let count = r.processes?.count, count > 0,
+                  (try? self.fittedSize(id: id, r.summaryLine, r)) ?? Int.max > Self.maxResponseBytes {
+                r.processes?.removeLast()
+            }
             let response = (try? self.leanResult(r.summaryLine, r)) ?? self.errorToolResult("could not encode the result")
             finish(self.result(id: id, response))
         }
@@ -770,10 +788,28 @@ enum Args {
                                          match: optionalString(args, "match"), argsContain: optionalString(args, "argsContain"))
     }
 
+    static func port(_ args: [String: Any]) throws -> UInt16 {
+        guard ["pid", "name", "path"].allSatisfy({ args[$0] == nil }) else {
+            throw ToolError("give exactly one of pid, name, path and port")
+        }
+        guard args["argsContain"] == nil, args["startToken"] == nil,
+              args["match"] == nil || args["match"] as? String == "exact" else {
+            throw ToolError("port does not accept argsContain, startToken or glob matching")
+        }
+        guard let number = args["port"] as? NSNumber, let value = int(number),
+              let port = UInt16(exactly: value), port > 0 else { throw ToolError("port must be an integer from 1 to 65535") }
+        return port
+    }
+
     static func waitCondition(_ args: [String: Any]) throws -> WaitCondition {
         guard let condition = string(args, "condition") else {
             throw ToolError("condition is required: cpu_idle, process_exit or memory_pressure_normal")
         }
+        if condition == "port_listening" {
+            guard args["trackId"] == nil, args["probeFree"] == nil else { throw ToolError("port_listening accepts neither trackId nor probeFree") }
+            return .portListening(try port(args))
+        }
+        guard args["port"] == nil else { throw ToolError("port requires port_listening") }
         if args["argsContain"] != nil, !(args["argsContain"] is NSNull),
            condition != "cpu_idle" || !["name", "path"].contains(where: { args[$0] != nil && !(args[$0] is NSNull) }) {
             throw ToolError("argsContain goes with a name or path selector of cpu_idle")

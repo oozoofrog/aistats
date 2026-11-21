@@ -17,6 +17,8 @@ public struct FindResult: Codable, Sendable {
     }
 
     public var observedAt: Date
+    public var scanAvailable: Bool?
+    public var portState: String?
     public var scope: String
     public var selector: String
     public var match: String?

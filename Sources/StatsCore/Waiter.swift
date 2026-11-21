@@ -10,12 +10,14 @@ public enum WaitCondition: Sendable {
     }
     case cpuIdle(Scope, belowPercent: Double)
     case processExit(pid: Int32, startToken: String?)
+    case portListening(UInt16)
     case memoryPressureNormal
 
     public var name: String {
         switch self {
         case .cpuIdle: return "cpu_idle"
         case .processExit: return "process_exit"
+        case .portListening: return "port_listening"
         case .memoryPressureNormal: return "memory_pressure_normal"
         }
     }
@@ -27,6 +29,7 @@ public struct WaitResult: Codable, Sendable {
         /// cpu_idle: system-wide percent of all cores, or percent of one core summed over the processes.
         public var cpuPercent: Double?
         public var memoryPressure: String?
+        public var portListening: Bool?
         public var processAlive: Bool?
         public var valid: Bool
     }
@@ -46,6 +49,8 @@ public struct WaitResult: Codable, Sendable {
     public var elapsedSeconds: Double
     public var timeoutSeconds: Double
     public var lastObservation: Observation?
+    public var processes: [FindResult.Row]?
+    public var matched: Int?
     public var culprits: [Culprit]?
     public var reason: String?
     /// cpu_idle with argsContain: processes that matched by name/path but whose arguments couldn't be read
@@ -102,6 +107,7 @@ public final class Waiter: @unchecked Sendable {
     private var pidKey: Proc.Key?
     /// cpu_idle on a group: whether any process ever matched.
     private var everMatched = false
+    private var portResult: FindResult?
     private var exitKey: Proc.Key?
 
     public init(condition: WaitCondition, timeout: TimeInterval, tracks: TrackManager? = nil) {
@@ -122,8 +128,13 @@ public final class Waiter: @unchecked Sendable {
                 finish("unavailable", reason: why)
                 return
             }
+            if case .portListening = condition {
+                tick()
+                guard self.completion != nil else { return }
+            }
             let period: DispatchTimeInterval
             if let p = tickPeriod { period = .milliseconds(Int(p * 1000)) }
+            else if case .portListening = condition { period = .milliseconds(450) }
             else if case .processExit = condition { period = .milliseconds(250) } else { period = .seconds(1) }
             let t = DispatchSource.makeTimerSource(queue: queue)
             t.schedule(deadline: .now() + period, repeating: period, leeway: .milliseconds(50))
@@ -180,7 +191,7 @@ public final class Waiter: @unchecked Sendable {
             if let token, token != String(u.start) { return "pid \(pid) was reused: startToken differs, the original process already exited" }
             exitKey = Proc.Key(pid: pid, start: u.start)
             return nil
-        case .memoryPressureNormal:
+        case .memoryPressureNormal, .portListening:
             return nil
         case .cpuIdle(let scope, _):
             switch scope {
@@ -214,7 +225,10 @@ public final class Waiter: @unchecked Sendable {
         last = obs.observation
         if obs.satisfied && obs.observation.valid { consecutive += 1 } else { consecutive = 0 }
         let needed: Int
-        if case .processExit = condition { needed = 1 } else { needed = Self.requiredConsecutive }
+        switch condition {
+        case .processExit, .portListening: needed = 1
+        default: needed = Self.requiredConsecutive
+        }
         if consecutive >= needed {
             finish("met")
         } else if let gone = obs.ended {
@@ -230,6 +244,10 @@ public final class Waiter: @unchecked Sendable {
                 return
             }
         }
+        if case .portListening = condition {
+            finish("timed_out", reason: portResult?.note ?? PortLookup.visibilityNote)
+            return
+        }
         finish("timed_out", reason: last?.valid == false ? invalidReason : nil)
     }
 
@@ -242,6 +260,11 @@ public final class Waiter: @unchecked Sendable {
 
     private func observe(now: UInt64) -> Observed {
         switch condition {
+        case .portListening(let port):
+            let result = PortLookup.find(port, limit: ProcessFinder.maxLimit)
+            portResult = result
+            let listening = result.matched > 0
+            return Observed(observation: .init(at: Date(), portListening: listening, valid: result.scanAvailable == true), satisfied: listening)
         case .processExit:
             let alive = exitKey.map(Proc.isAlive) ?? false
             return Observed(observation: .init(at: Date(), processAlive: alive, valid: true), satisfied: !alive)
@@ -368,6 +391,10 @@ public final class Waiter: @unchecked Sendable {
             result.culprits = culprits(scope: scope, elapsed: elapsed)
         }
         if case .cpuIdle(.selector(let selector), _) = condition, selector.argsContain != nil { result.argsUnreadable = argsUnreadable.count }
+        if state == "met", let portResult {
+            result.processes = portResult.processes
+            result.matched = portResult.matched
+        }
         completion(result)
     }
 
