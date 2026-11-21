@@ -52,6 +52,7 @@ public struct WaitResult: Codable, Sendable {
     public var timeoutSeconds: Double
     public var lastObservation: Observation?
     public var processes: [FindResult.Row]?
+    public var processesOmitted: Int?
     public var matched: Int?
     public var culprits: [Culprit]?
     public var reason: String?

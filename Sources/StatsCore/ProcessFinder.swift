@@ -23,6 +23,7 @@ public struct FindResult: Codable, Sendable {
     public var selector: String
     public var match: String?
     public var processes: [Row]
+    public var processesOmitted: Int?
     public var matched: Int
     public var truncated: Bool
     /// With argsContain: processes that matched by name/path but whose arguments couldn't be read

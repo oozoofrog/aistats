@@ -294,6 +294,7 @@ public final class MCPServer: @unchecked Sendable {
     - Watch processes over time (CPU/memory min/avg/max, restarts, child spawns, CPU spikes): track_processes start, later status.
     - Instead of sleeping or polling: wait_for (cpu_idle, process_exit, memory_pressure_normal; up to 55 s per call).
     - OS, chip, Xcode/Swift versions: get_environment. Last hour's trend: get_stats_history (needs the AIStats app).
+    Structured content fits 4096 bytes; omitted counts mark trimmed lists.
     Only the current user's processes are readable; others need root.
     """
 
@@ -346,7 +347,7 @@ public final class MCPServer: @unchecked Sendable {
                 "type": "object",
                 "properties": [
                     "minutes": ["type": "integer", "minimum": 1, "maximum": 60, "default": 10],
-                    "maxPoints": ["type": "integer", "minimum": 0, "maximum": 60, "default": 20],
+                    "maxPoints": ["type": "integer", "minimum": 0, "maximum": 60, "default": 10],
                 ],
             ],
             "annotations": ["readOnlyHint": true, "openWorldHint": false],
@@ -439,17 +440,35 @@ public final class MCPServer: @unchecked Sendable {
                 record(name, "\(sort.rawValue) \(limit)")
                 let snapshot = sampler.measure(interval: 1.0, includeProcesses: true)
                 let top = sampler.topProcesses(sortedBy: sort, limit: limit, from: snapshot.topProcesses ?? [])
-                return result(id: id, try toolResult(text: ProcessTable.text(top), json: ProcessList(sort: sort.rawValue, processes: top)))
+                var list = ProcessList(sort: sort.rawValue, processes: top)
+                while true {
+                    let summary = ProcessTable.text(list.processes)
+                    let body = try toolResult(text: summary, json: list)
+                    if fits(body, id: id) || list.processes.isEmpty { return result(id: id, body) }
+                    list.processes.removeLast()
+                    list.processesOmitted = top.count - list.processes.count
+                }
 
             case "get_stats_history":
                 let minutes = try Args.int(args, "minutes", default: 10, in: 1...60)
-                let maxPoints = try Args.int(args, "maxPoints", default: 20, in: 0...60)
+                let maxPoints = try Args.int(args, "maxPoints", default: 10, in: 0...60)
                 record(name, "\(minutes)m")
                 let points = history.points(since: Date().addingTimeInterval(-Double(minutes) * 60))
                 let recording = history.isRecording()
-                let historyResult = HistoryResult(minutes: minutes, recording: recording,
-                                                  summary: HistorySummary.make(from: points, maxPoints: maxPoints))
-                return result(id: id, try toolResult(text: historyResult.text, json: historyResult))
+                var summary = HistorySummary.make(from: points, maxPoints: maxPoints)
+                let requested = min(maxPoints, points.count)
+                var count = requested
+                while true {
+                    if var sampled = summary {
+                        sampled.points = HistorySummary.downsample(points, to: count)
+                        sampled.pointsOmitted = requested > count ? requested - count : nil
+                        summary = sampled
+                    }
+                    let history = HistoryResult(minutes: minutes, recording: recording, summary: summary)
+                    let body = try toolResult(text: history.text, json: history)
+                    if fits(body, id: id) || count == 0 { return result(id: id, body) }
+                    count -= 1
+                }
 
             case "diagnose_system":
                 let purpose = Args.string(args, "purpose") ?? "slowdown"
@@ -475,7 +494,12 @@ public final class MCPServer: @unchecked Sendable {
                 // Long paths can push the rows past the budget: drop the smallest rows until it fits.
                 while r.processes.count > 1, (try fittedSize(id: id, r.summaryLine, r)) > Self.maxResponseBytes {
                     r.processes.removeLast()
+                    r.processesOmitted = (r.processesOmitted ?? 0) + 1
                     r.truncated = true
+                }
+                if r.processes.count == 1, try fittedSize(id: id, r.summaryLine, r) > Self.maxResponseBytes {
+                    r.processes[0].path = r.processes[0].path.map { TrackReport.clip($0, 80, keepTail: true) }
+                    r.processes[0].name = r.processes[0].name.map { TrackReport.clip($0, 48) }
                 }
                 return result(id: id, try leanResult(r.summaryLine, r))
 
@@ -593,6 +617,7 @@ public final class MCPServer: @unchecked Sendable {
             while let count = r.processes?.count, count > 0,
                   (try? self.fittedSize(id: id, r.summaryLine, r)) ?? Int.max > Self.maxResponseBytes {
                 r.processes?.removeLast()
+                r.processesOmitted = (r.processesOmitted ?? 0) + 1
             }
             let response = (try? self.leanResult(r.summaryLine, r)) ?? self.errorToolResult("could not encode the result")
             finish(self.result(id: id, response))
@@ -608,31 +633,38 @@ public final class MCPServer: @unchecked Sendable {
         activity.record(.init(agent: agentName, tool: tool, detail: detail))
     }
 
-    private struct ProcessList: Encodable { var sort: String; var processes: [ProcessUsage] }
+    private struct ProcessList: Encodable {
+        var sort: String
+        var processes: [ProcessUsage]
+        var processesOmitted: Int?
+    }
     private struct TrackList: Encodable { var tracks: [TrackListRow] }
 
     private func toolResult<T: Encodable>(text: String, json: T) throws -> [String: Any] {
         try toolResult(text: text, data: Self.encoder.encode(json))
     }
 
-    private func toolResult(text: String, data: Data) -> [String: Any] {
-        var result: [String: Any] = [
-            "content": [["type": "text", "text": text + "\n\n" + String(decoding: data, as: UTF8.self)]],
-            "isError": false,
-        ]
-        if data.first == UInt8(ascii: "{") { result["structuredContent"] = RawJSON(data: data) }
-        return result
+    private func fits(_ body: [String: Any], id: Any) -> Bool {
+        guard let data = (body["structuredContent"] as? RawJSON)?.data else { return false }
+        return data.count <= Self.maxResponseBytes && Self.encodeLine(result(id: id, body)).count <= 9216
     }
 
-    /// One summary line, then compact JSON (for clients that ignore structuredContent), plus structuredContent.
+    private func toolResult(text: String, data: Data) -> [String: Any] {
+        let summary: String
+        if text.utf8.count <= 512 { summary = text }
+        else {
+            var bytes = 0
+            summary = String(text.unicodeScalars.prefix { scalar in
+                bytes += scalar.utf8.count
+                return bytes <= 509
+            }) + "…"
+        }
+        return ["content": [["type": "text", "text": summary + "\n\n" + String(decoding: data, as: UTF8.self)]],
+                "isError": false, "structuredContent": RawJSON(data: data)]
+    }
+
     private func leanResult<T: Encodable>(_ line: String, _ json: T) throws -> [String: Any] {
-        let data = try Self.encoder.encode(json)
-        var result: [String: Any] = [
-            "content": [["type": "text", "text": line + "\n" + String(decoding: data, as: UTF8.self)]],
-            "isError": false,
-        ]
-        if data.first == UInt8(ascii: "{") { result["structuredContent"] = RawJSON(data: data) }
-        return result
+        try toolResult(text: line, json: json)
     }
 
     private func errorToolResult(_ message: String) -> [String: Any] {
@@ -683,6 +715,10 @@ public final class MCPServer: @unchecked Sendable {
     static func line(_ object: [String: Any], toolCall: Bool) -> Data {
         let data = encodeLine(object)
         guard data.count > maxResponseBytes else { return data }
+        if toolCall, let body = object["result"] as? [String: Any],
+           let payload = body["structuredContent"] as? RawJSON {
+            return ResponseBudget.fit(object, payload: payload.data, line: data)
+        }
         if let error = object["error"] as? [String: Any], let message = error["message"] as? String {
             return clipped(message) { m in
                 var e = error; e["message"] = m

@@ -166,6 +166,7 @@ public final class HistoryStore: @unchecked Sendable {
 }
 
 public struct HistoryResult: Encodable, Sendable {
+    public let memoryTotalBytes: UInt64
     public let minutes: Int
     public let recording: Bool
     public let summary: HistorySummary?
@@ -176,7 +177,12 @@ public struct HistoryResult: Encodable, Sendable {
     public init(minutes: Int, recording: Bool, summary: HistorySummary?) {
         self.minutes = minutes
         self.recording = recording
-        self.summary = summary
+        memoryTotalBytes = ProcessInfo.processInfo.physicalMemory
+        var compact = summary
+        if let count = compact?.points.count {
+            for i in 0..<count { compact?.points[i].memoryUsedBytes = nil }
+        }
+        self.summary = compact
         startCommand = recording ? nil : "open -b " + AIStatsPaths.appBundleIdentifier
         fallbackTool = summary == nil ? "get_system_stats" : nil
         notes = !recording && summary != nil ? ["The AIStats app is not recording now; this history ends at the last recorded sample."] : nil
@@ -211,6 +217,7 @@ public struct HistorySummary: Codable, Sendable {
     /// Change in free disk space over the window (negative = space was used).
     public var diskAvailableChangeBytes: Int64?
     /// At most `maxPoints` evenly spaced points (window averages) for trend reading; empty when 0 were asked for.
+    public var pointsOmitted: Int?
     public var points: [HistoryPoint]
 
     static func range(_ values: [Double]) -> Range? {

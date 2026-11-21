@@ -111,7 +111,7 @@ func run() throws {
         let minutes = try args.int("minutes", default: 10, in: 1...60)
         let store = HistoryStore()
         let summary = HistorySummary.make(from: store.points(since: Date().addingTimeInterval(-Double(minutes) * 60)),
-                                          maxPoints: args.flags.contains("json") ? 20 : 60)
+                                          maxPoints: args.flags.contains("json") ? 10 : 60)
         if args.flags.contains("json") {
             try printJSON(HistoryResult(minutes: minutes, recording: store.isRecording(), summary: summary))
         } else if let summary {

@@ -63,7 +63,7 @@ with open(os.path.join(os.environ['AISTATS_HOME'], 'history.jsonl'), 'w') as f:
             "receivedBytesPerSecond": 1000.0, "sentBytesPerSecond": 10.0, "diskAvailableBytes": 10**9 - i * 10**6}) + "\n")
 PY
 OUT=$(requests | "$CLI" mcp)
-check "s=sc(5); sm=s['summary']; assert s['recording'] and sm['cpuPercent']['max']==90 and sm['worstMemoryPressure']=='warning' and sm['diskAvailableChangeBytes']==-89000000 and len(sm['points'])==20" "history with app data (default 20 points)"
+check "s=sc(5); sm=s['summary']; assert s['recording'] and sm['cpuPercent']['max']==90 and sm['worstMemoryPressure']=='warning' and sm['diskAvailableChangeBytes']==-89000000 and len(sm['points'])==10" "history with app data (default 10 points)"
 check "sm=sc(8)['summary']; assert sm['points']==[] and sm['sampleCount']==90" "history maxPoints 0 = summary only"
 
 # 3) The app's activity log saw the calls.
