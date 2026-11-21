@@ -50,6 +50,10 @@ def check(binary, directory):
                     assert find(port)["portState"] == "unknown"
                     assert find(port, probeFree=True)["portState"] == "in_use"
                     listener.listen()
+                    expected = subprocess.check_output(["/usr/sbin/lsof", "-nP", "-a", "-u", str(os.geteuid()),
+                                                        "-iTCP:" + str(port), "-sTCP:LISTEN", "-Fp"], text=True)
+                    owners = {int(line[1:]) for line in expected.splitlines() if line.startswith("p")}
+                    assert owners == {os.getpid()}
                     times = []
                     for _ in range(20):
                         start = time.monotonic()
@@ -69,6 +73,23 @@ def check(binary, directory):
                 wait = call("wait_for", condition="port_listening", port=port, timeoutSeconds=1)["structuredContent"]
                 assert wait["state"] == "timed_out" and "other users" in wait["reason"]
                 assert wait["lastObservation"]["portListening"] is False
+            with socket.socket() as ipv4, socket.socket(socket.AF_INET6) as ipv6:
+                ipv6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                ipv4.bind(("127.0.0.1", 0))
+                port = ipv4.getsockname()[1]
+                ipv6.bind(("::1", port))
+                ipv4.listen()
+                ipv6.listen()
+                client_code = "import socket,sys; s=socket.create_connection(('127.0.0.1',int(sys.argv[1]))); sys.stdin.read()"
+                with subprocess.Popen([sys.executable, "-c", client_code, str(port)], stdin=subprocess.PIPE) as client:
+                    try:
+                        with ipv4.accept()[0]:
+                            row, = find(port)["processes"]
+                            owner, = call("find_processes", pid=os.getpid())["structuredContent"]["processes"]
+                            for key in ("pid", "name", "startToken", "ppid"):
+                                assert row[key] == owner[key]
+                    finally:
+                        client.stdin.close()
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
                 port = listener.getsockname()[1]

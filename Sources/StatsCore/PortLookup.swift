@@ -5,14 +5,21 @@ public enum PortLookup {
     static let visibilityNote = "Listeners of other users are invisible."
 
     public static func find(_ port: UInt16, probeFree: Bool = false, limit: Int = 8) -> FindResult {
+        find(port, probeFree: probeFree, limit: limit, entries: Proc.currentUserTable(),
+             visible: { Proc.matches($0.pid, startSec: $0.startSec, startUsec: $0.startUsec) },
+             listener: listens, probe: { bindError($0, family: $1) })
+    }
+
+    static func find(_ port: UInt16, probeFree: Bool, limit: Int, entries: [Proc.Entry]?,
+                     visible: (Proc.Entry) -> Bool, listener: (Int32, UInt16) -> Bool,
+                     probe: (UInt16, Int32) -> Int32) -> FindResult {
         var result = FindResult(observedAt: Date(), scope: "current_user", selector: "port",
                                 processes: [], matched: 0, truncated: false)
-        let entries = Proc.currentUserTable()
         result.scanAvailable = entries != nil
         let rows = (entries ?? []).compactMap { entry -> FindResult.Row? in
-            guard listens(entry.pid, port: port) else { return nil }
+            guard visible(entry), listener(entry.pid, port) else { return nil }
             let row = ProcessFinder.read(pid: entry.pid, ppid: Proc.parent(entry.pid), name: Proc.name(entry.pid), path: nil)
-            guard Proc.matches(entry.pid, startSec: entry.startSec, startUsec: entry.startUsec) else { return nil }
+            guard visible(entry) else { return nil }
             return row
         }.sorted { ($0.footprintBytes ?? 0, $0.pid) > ($1.footprintBytes ?? 0, $1.pid) }
         result.matched = rows.count
@@ -24,7 +31,7 @@ public enum PortLookup {
             result.portState = "unknown"
             result.note = entries == nil ? "Process table unavailable. " + visibilityNote : visibilityNote
             if probeFree {
-                let errors = [AF_INET, AF_INET6].map { bindError(port, family: $0) }
+                let errors = [AF_INET, AF_INET6].map { probe(port, $0) }
                 if errors.contains(EADDRINUSE) { result.portState = "in_use" }
                 else if let error = errors.first(where: { $0 != 0 }) {
                     result.note = visibilityNote + " Bind: " + (error == EACCES ? "EACCES" : String(cString: strerror(error))) + " (errno " + String(error) + ")."
@@ -60,14 +67,15 @@ public enum PortLookup {
         return false
     }
 
-    private static func bindError(_ port: UInt16, family: Int32) -> Int32 {
+    static func bindError(_ port: UInt16, family: Int32,
+                          bindSocket: (Int32, UnsafePointer<sockaddr>, socklen_t) -> Int32 = Darwin.bind) -> Int32 {
         let fd = socket(family, SOCK_STREAM, IPPROTO_TCP)
         guard fd >= 0 else { return errno }
         defer { close(fd) }
         func attempt<T>(_ address: inout T) -> Int32 {
             withUnsafePointer(to: &address) { pointer in
                 pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    bind(fd, $0, socklen_t(MemoryLayout<T>.size)) == 0 ? 0 : errno
+                    bindSocket(fd, $0, socklen_t(MemoryLayout<T>.size)) == 0 ? 0 : errno
                 }
             }
         }
