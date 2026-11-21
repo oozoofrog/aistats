@@ -6,12 +6,32 @@ import StatsCore
 enum PanelFocus: Hashable {
     case row(AgentTarget)
     case action(AgentTarget, String)
+    /// The `종료…` action of one orphan row, by pid and Start Token.
+    case orphan(Int32, String)
     case quit
+
+    /// The control that gets focus back after a Confirmation Dialog (ADR 0007). Nil when the initiating row is gone.
+    static func restored(_ target: FocusTarget, in screen: ScreenSnapshot) -> PanelFocus? {
+        switch target {
+        case .agent(let agent):
+            let row = screen.registrations[agent]
+            if case .nameConflict? = row?.state, row?.busy == false { return .action(agent, "덮어쓰기…") }
+            return .row(agent)
+        case .orphan(let pid, let token):
+            return screen.orphans?.processes.contains { $0.pid == pid && $0.startToken == token } == true ? .orphan(pid, token) : nil
+        }
+    }
+}
+
+/// The row or action that started a Confirmation Dialog.
+enum FocusTarget: Equatable {
+    case agent(AgentTarget)
+    case orphan(Int32, String)
 }
 
 struct FocusRequest: Equatable {
     let id = UUID()
-    let target: AgentTarget
+    let target: FocusTarget
 }
 
 final class PanelContent: ObservableObject {
@@ -24,10 +44,12 @@ final class PanelContent: ObservableObject {
     let perform: (AppModel.Action, AgentTarget) -> Void
     let refreshRegistrations: () -> Void
     let confirm: (AgentTarget) -> Void
+    let terminate: (OrphanReport.Row) -> Void
 
     init(data: PanelData, theme: Theme, size: CGSize, decoration: DecorationContext,
          cells: [EffectID: FrameCell], perform: @escaping (AppModel.Action, AgentTarget) -> Void,
-         refreshRegistrations: @escaping () -> Void, confirm: @escaping (AgentTarget) -> Void) {
+         refreshRegistrations: @escaping () -> Void, confirm: @escaping (AgentTarget) -> Void,
+         terminate: @escaping (OrphanReport.Row) -> Void = { _ in }) {
         self.data = data
         self.theme = theme
         self.size = size
@@ -36,6 +58,7 @@ final class PanelContent: ObservableObject {
         self.perform = perform
         self.refreshRegistrations = refreshRegistrations
         self.confirm = confirm
+        self.terminate = terminate
     }
 
     func artwork(_ id: EffectID, _ artwork: Artwork) -> some View {
@@ -76,12 +99,7 @@ struct PanelView: View {
         .environment(\.panelTheme, content.theme)
         .onChange(of: content.focusRequest, initial: true) { _, request in
             guard let request, content.decoration.exposure.isCurrent else { return }
-            let row = screen.registrations[request.target]
-            if case .nameConflict? = row?.state, row?.busy == false {
-                focus = .action(request.target, "덮어쓰기…")
-            } else {
-                focus = .row(request.target)
-            }
+            if let restored = PanelFocus.restored(request.target, in: screen) { focus = restored }
         }
         .overlay(alignment: .topLeading) {
             if PanelTrace.isEnabled {
@@ -106,6 +124,7 @@ struct PanelView: View {
             }
             if !screen.topProcesses.isEmpty { processes }
             if let tree = screen.tree { OriginPanel(tree: tree) }
+            if let orphans = screen.orphans { OrphanPanel(report: orphans, results: screen.terminations, terminate: content.terminate, focus: $focus) }
             agents
             if !screen.otherClients.isEmpty { clients }
             if !screen.recentCalls.isEmpty { calls }

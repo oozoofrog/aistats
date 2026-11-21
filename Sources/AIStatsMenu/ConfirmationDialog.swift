@@ -2,7 +2,25 @@ import AppKit
 import StatsCore
 import SwiftUI
 
-struct ReplacementConsent {
+/// What one Confirmation Dialog shows (ADR 0007, generalized by ADR 0009).
+struct DialogContent: Equatable {
+    struct Detail: Equatable { let label: String; let value: String }
+    let title: String
+    let message: String
+    let details: [Detail]
+    let note: String
+    let destructiveLabel: String
+}
+
+/// A consent value captured at presentation: the dialog text and the action that runs after an explicit confirmation.
+protocol Consent {
+    var dialog: DialogContent { get }
+    /// The row or action that gets focus back when the dialog closes and the Host remains open (ADR 0007).
+    var focus: FocusTarget { get }
+    @MainActor func confirm(_ model: AppModel)
+}
+
+struct ReplacementConsent: Consent {
     let target: AgentTarget
     let summary: String
     let fingerprint: String
@@ -15,17 +33,28 @@ struct ReplacementConsent {
         self.summary = summary
         self.fingerprint = fingerprint
     }
+
+    var dialog: DialogContent {
+        DialogContent(title: "\(target.displayName)의 aistats 항목을 바꿀까요?", message: "이미 등록된 명령을 이 앱의 aistats로 덮어씁니다.",
+                      details: [.init(label: "현재 항목: ", value: summary), .init(label: "항목 지문: ", value: fingerprint)],
+                      note: "최종 확인에서 항목이 바뀐 것으로 확인되면 덮어쓰지 않습니다. 바꾸기 전 설정 파일은 AIStats 데이터 폴더(backups)에 백업합니다.",
+                      destructiveLabel: "덮어쓰기")
+    }
+
+    var focus: FocusTarget { .agent(target) }
+
+    @MainActor func confirm(_ model: AppModel) { model.perform(.replace(fingerprint: fingerprint), target) }
 }
 
 @MainActor
 final class ConfirmationDialog: NSObject, NSWindowDelegate {
-    let consent: ReplacementConsent
+    let content: DialogContent
     private let panel: CancelOnReturnPanel
     private let appearance: Appearance
     private var active = false
 
-    init(consent: ReplacementConsent, theme: Theme, screen: NSScreen?) {
-        self.consent = consent
+    init(_ content: DialogContent, theme: Theme, screen: NSScreen?) {
+        self.content = content
         appearance = Appearance(theme)
         let size = S.fit(CGSize(width: S.dialogWidth, height: S.dialogHeight), on: screen)
         panel = CancelOnReturnPanel(contentRect: CGRect(origin: .zero, size: size),
@@ -34,11 +63,11 @@ final class ConfirmationDialog: NSObject, NSWindowDelegate {
         panel.delegate = self
         panel.isReleasedWhenClosed = false
         panel.title = "AIStats"
-        panel.setAccessibilityLabel("\(consent.target.displayName)의 aistats 항목을 바꿀까요?")
+        panel.setAccessibilityLabel(content.title)
         panel.contentViewController = NSHostingController(rootView: DialogView(
-            consent: consent, appearance: appearance, size: size,
+            content: content, appearance: appearance, size: size,
             cancel: { [weak self] in self?.finish(.cancel) },
-            replace: { [weak self] in self?.finish(.OK) }
+            confirm: { [weak self] in self?.finish(.OK) }
         ))
         panel.cancel = { [weak self] in self?.finish(.cancel) }
         if let visible = screen?.visibleFrame {
@@ -94,33 +123,34 @@ final class ConfirmationDialog: NSObject, NSWindowDelegate {
     }
 
     private struct DialogView: View {
-        enum Focus: Hashable { case cancel, replace }
-        let consent: ReplacementConsent
+        enum Focus: Hashable { case cancel, confirm }
+        let content: DialogContent
         @ObservedObject var appearance: Appearance
         let size: CGSize
         let cancel: () -> Void
-        let replace: () -> Void
+        let confirm: () -> Void
         @FocusState private var focus: Focus?
 
         var body: some View {
             VStack(alignment: .leading, spacing: S.sectionGap) {
                 StaticArtwork(artwork: .hazard, decoration: nil).frame(height: S.hazardHeight)
-                Text("\(consent.target.displayName)의 aistats 항목을 바꿀까요?")
+                Text(content.title)
                     .font(Theme.TypeRole.dialog.font)
                     .accessibilityAddTraits(.isHeader)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("이미 등록된 명령을 이 앱의 aistats로 덮어씁니다.")
+                Text(content.message)
                     .fixedSize(horizontal: false, vertical: true)
                 ScrollView {
                     VStack(alignment: .leading, spacing: S.rowGap) {
-                        Text("현재 항목: ") + Text(consent.summary).font(Theme.TypeRole.data.font)
-                        Text("항목 지문: ") + Text(consent.fingerprint).font(Theme.TypeRole.data.font)
+                        ForEach(content.details.indices, id: \.self) { i in
+                            Text(content.details[i].label) + Text(content.details[i].value).font(Theme.TypeRole.data.font)
+                        }
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text("최종 확인에서 항목이 바뀐 것으로 확인되면 덮어쓰지 않습니다. 바꾸기 전 설정 파일은 AIStats 데이터 폴더(backups)에 백업합니다.")
+                Text(content.note)
                     .foregroundStyle(appearance.theme.detail)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: S.xxs) {
@@ -129,10 +159,10 @@ final class ConfirmationDialog: NSObject, NSWindowDelegate {
                         .buttonStyle(PanelButtonStyle(focused: focus == .cancel))
                         .focusEffectDisabled()
                         .focused($focus, equals: .cancel)
-                    Button("덮어쓰기", action: replace)
-                        .buttonStyle(PanelButtonStyle(kind: .destructive, focused: focus == .replace))
+                    Button(content.destructiveLabel, action: confirm)
+                        .buttonStyle(PanelButtonStyle(kind: .destructive, focused: focus == .confirm))
                         .focusEffectDisabled()
-                        .focused($focus, equals: .replace)
+                        .focused($focus, equals: .confirm)
                 }
             }
             .font(Theme.TypeRole.body.font)

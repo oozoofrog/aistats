@@ -8,6 +8,8 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
     private let model = AppModel()
     private let storage = StorageScheduler.live()
+    private let lineage = LineageController.live()
+    private var closedPanelRecording = UserDefaults.standard.bool(forKey: Lineage.closedPanelKey)
     private let clock = AnimationClock()
     private var theme = Theme(options: .current)
     private let popover = NSPopover()
@@ -31,6 +33,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         _ = PanelFonts.shared
         storage.observeConditions()
         storage.start()
+        model.exposureChanged = { [lineage] exposed in lineage.update { $0.exposed = exposed } }
+        model.sessionsChanged = { [lineage] in lineage.sessionsChanged() }
+        lineage.sessionsChanged()
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let on = UserDefaults.standard.bool(forKey: Lineage.closedPanelKey)
+                guard on != self.closedPanelRecording else { return }
+                self.closedPanelRecording = on
+                self.lineage.update { $0.closedPanel = on }
+            }
+            .store(in: &observers)
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(togglePopover)
@@ -64,8 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
 
     private func makeHost(_ id: String) -> PanelHost {
-        PanelHost(id: id, model: model, clock: clock, theme: theme) { [weak self] in self?.confirmReplace(from: $0, target: $1) }
+        PanelHost(id: id, model: model, clock: clock, theme: theme,
+                  confirm: { [weak self] in self?.confirmReplace(from: $0, target: $1) },
+                  terminate: { [weak self] in self?.confirmTermination(from: $0, row: $1) })
     }
+
+    func applicationWillTerminate(_ notification: Notification) { lineage.shutdown() }
 
     private func updateSettings() {
         let next = DisplayOptions.current
@@ -158,9 +176,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
 
     private func confirmReplace(from host: PanelHost, target: AgentTarget) {
-        guard dialog == nil, host.isExposed,
-              let consent = ReplacementConsent(target: target, row: model.screen.registrations[target]) else { return }
-        let modal = ConfirmationDialog(consent: consent, theme: theme, screen: host.window?.screen)
+        guard let consent = ReplacementConsent(target: target, row: model.screen.registrations[target]) else { return }
+        present(consent, from: host)
+    }
+
+    private func confirmTermination(from host: PanelHost, row: OrphanReport.Row) {
+        present(TerminationConsent(row: row), from: host)
+    }
+
+    /// One app-modal panel per action (ADR 0007). The consent runs its action only after an explicit confirmation.
+    /// Focus returns to the initiating row or action if the Host remains open.
+    private func present(_ consent: some Consent, from host: PanelHost) {
+        guard dialog == nil, host.isExposed else { return }
+        let modal = ConfirmationDialog(consent.dialog, theme: theme, screen: host.window?.screen)
         let presentation = host.presentation
         dialog = modal
         let fromPopover = host === popupHost
@@ -168,8 +196,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         let confirmed = modal.run()
         if fromPopover { popover.behavior = .transient }
         dialog = nil
-        if confirmed { model.perform(.replace(fingerprint: consent.fingerprint), consent.target) }
-        DispatchQueue.main.async { [weak host] in host?.restoreFocus(target, presentation: presentation) }
+        if confirmed { consent.confirm(model) }
+        let focus = consent.focus
+        DispatchQueue.main.async { [weak host] in host?.restoreFocus(focus, presentation: presentation) }
     }
 }
 

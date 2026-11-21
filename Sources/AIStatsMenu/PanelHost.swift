@@ -11,6 +11,7 @@ final class PanelHost {
     private var theme: Theme
     private var dimensions: CGSize
     private let confirm: (PanelHost, AgentTarget) -> Void
+    private let terminate: (PanelHost, OrphanReport.Row) -> Void
     private let traceClose: (String) -> Void
     private var updates: AnyCancellable?
     private var content: PanelContent?
@@ -26,13 +27,16 @@ final class PanelHost {
     var isExposed: Bool { exposure?.isCurrent == true }
     var size: CGSize { dimensions }
     var appliedData: PanelData? { content?.data }
+    var appliedFocusRequest: FocusRequest? { content?.focusRequest }
 
     init(id: String, model: AppModel, clock: AnimationClock, theme: Theme,
          traceClose: @escaping (String) -> Void = { PanelTrace.event("Close start", $0) },
-         confirm: @escaping (PanelHost, AgentTarget) -> Void) {
+         confirm: @escaping (PanelHost, AgentTarget) -> Void,
+         terminate: @escaping (PanelHost, OrphanReport.Row) -> Void = { _, _ in }) {
         self.model = model
         self.theme = theme
         self.confirm = confirm
+        self.terminate = terminate
         self.traceClose = traceClose
         motion = HostMotion(host: id, clock: clock)
         motion.settings(theme.options)
@@ -127,6 +131,10 @@ final class PanelHost {
                                    confirm: { [weak self] target in
                                        guard let self, token.isCurrent else { return }
                                        self.confirm(self, target)
+                                   },
+                                   terminate: { [weak self] row in
+                                       guard let self, token.isCurrent else { return }
+                                       self.terminate(self, row)
                                    })
         content.focusRequest = focusRequest
         focusRequest = nil
@@ -155,7 +163,7 @@ final class PanelHost {
         if isExposed { motion.interact() }
     }
 
-    func restoreFocus(_ target: AgentTarget, presentation: UInt64) {
+    func restoreFocus(_ target: FocusTarget, presentation: UInt64) {
         guard shown, self.presentation == presentation else { return }
         let request = FocusRequest(target: target)
         if let content, isExposed {

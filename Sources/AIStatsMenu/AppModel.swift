@@ -14,6 +14,8 @@ struct ScreenSnapshot {
     var cpuHistory: [CPUPoint] = []
     var topProcesses: [ProcessUsage] = []
     var tree: ProcessTree?
+    var orphans: OrphanReport?
+    var terminations: [AppModel.TerminationResult] = []
     var agents: [ActivityStore.Presence] = []
     var recentCalls: [ActivityStore.Call] = []
     var recordingError: String?
@@ -71,6 +73,12 @@ final class AppModel {
     private let activityPoll = ActivityPoll()
     private let crossings = OriginCrossings()
     private let processGate: ProcessGeneration
+    private let orphanPoll = OrphanPoll()
+    private let termination: OrphanTermination.System
+    /// Called when the first Host becomes exposed (true) or the last one stops being exposed (false).
+    var exposureChanged: ((Bool) -> Void)?
+    /// Called when the presence poll sees a change in the live Sessions.
+    var sessionsChanged: (() -> Void)?
     private var timer: Timer?
     private var pointID: UInt64 = 0
     private lazy var registration = RegistrationOperations(AgentRegistrar(binaryPath: cliPath))
@@ -81,12 +89,16 @@ final class AppModel {
     func setExposed(_ id: String, exposed: Bool) -> Bool {
         switch processGate.setExposed(id, exposed) {
         case .first:
+            exposureChanged?(true)
             refreshRegistrations()
             refresh()
             return true
         case .last:
-            if !screen.topProcesses.isEmpty || screen.tree != nil {
+            exposureChanged?(false)
+            orphanPoll.reset()
+            if !screen.topProcesses.isEmpty || screen.tree != nil || screen.orphans != nil {
                 screen.tree = nil
+                screen.orphans = nil
                 screen.topProcesses = []
                 publishScreen()
             }
@@ -102,8 +114,9 @@ final class AppModel {
     }
 
     init(directory: URL = AIStatsPaths.home, registration: RegistrationOperations? = nil,
-         processGate: ProcessGeneration = ProcessGeneration()) {
+         processGate: ProcessGeneration = ProcessGeneration(), termination: OrphanTermination.System? = nil) {
         history = HistoryStore(directory: directory)
+        self.termination = termination ?? .live(home: directory)
         activity = ActivityStore(directory: directory)
         self.processGate = processGate
         if let registration { self.registration = registration }
@@ -135,7 +148,8 @@ final class AppModel {
         let generation = processGate.ticket()
         let sessions = screen.agents
         let rule = OriginAlertRule.current()
-        samplerQueue.async { [weak self, sampler, processGate, crossings] in
+        let home = history.directory
+        samplerQueue.async { [weak self, sampler, processGate, crossings, orphanPoll] in
             let before = sampler.slowMetricReads
             var entries: [Proc.Entry] = []
             var snapshot = sampler.sample { _ in
@@ -148,12 +162,16 @@ final class AppModel {
             let top = sampler.processCPUIsFresh
                 ? sampler.topProcesses(sortedBy: .cpu, limit: 3, from: snapshot.topProcesses ?? [], includeParent: false) : []
             var tree: ProcessTree?
+            var orphans: OrphanReport?
             var alerts: [AgentSessions.Busy] = []
             let processes = snapshot.topProcesses ?? []
             let fresh = sampler.processCPUIsFresh && processGate.allows(generation)
             let crossed = crossings.crossed(processes: fresh ? processes : [], rule: rule, generation: generation)
             if fresh {
                 tree = ProcessTree(entries: entries, processes: processes, sessions: sessions, at: snapshot.timestamp)
+                if !entries.isEmpty, orphanPoll.due() {
+                    orphans = OrphanReport.collect(home: home, presences: sessions, table: entries, now: snapshot.timestamp)
+                }
                 if !crossed.isEmpty, let rule {
                     let origins = OriginSnapshot(processes: processes, entries: entries, sessions: sessions)
                     alerts = crossed.compactMap { origins.explain($0, metric: rule.metric) }
@@ -164,6 +182,7 @@ final class AppModel {
                 guard let self else { return }
                 if fresh && processGate.allows(generation) {
                     self.screen.tree = tree
+                    if let orphans { self.screen.orphans = orphans }
                     if !alerts.isEmpty, let rule { self.notify(alerts, rule: rule, generation: generation) }
                 }
                 self.apply(snapshot: snapshot, top: top, generation: generation)
@@ -175,7 +194,9 @@ final class AppModel {
             let calls = Array(activity.recentCalls(limit: Self.visibleCallLimit).reversed())
             DispatchQueue.main.async {
                 guard let self, self.screen.agents != agents || self.screen.recentCalls != calls else { return }
+                let sessionsChanged = self.screen.agents != agents
                 self.screen.agents = agents
+                if sessionsChanged { self.sessionsChanged?() }
                 if calls.contains(where: { !self.screen.recentCalls.contains($0) }) {
                     self.screen.quietEvent = PanelTrace.now
                 }
@@ -229,6 +250,35 @@ final class AppModel {
                 self.publishScreen()
             }
         }
+    }
+
+    // MARK: Orphans
+
+    struct TerminationResult: Equatable {
+        let pid: Int32
+        let name: String
+        let message: String
+        let isError: Bool
+    }
+
+    /// Runs the confirmed termination off the main thread and shows its result (ORP-035).
+    func terminate(_ row: OrphanReport.Row) {
+        showTermination(.init(pid: row.pid, name: row.name, message: "SIGTERM을 보내는 중…", isError: false))
+        registrationQueue.async { [weak self, termination] in
+            let outcome = OrphanTermination.run(pid: row.pid, startToken: row.startToken, agent: row.agent, system: termination)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.orphanPoll.reset()
+                self.showTermination(.init(pid: row.pid, name: row.name, message: outcome.message, isError: outcome.isError))
+            }
+        }
+    }
+
+    private func showTermination(_ result: TerminationResult) {
+        screen.terminations.removeAll { $0.pid == result.pid && $0.name == result.name }
+        screen.terminations.insert(result, at: 0)
+        screen.terminations = Array(screen.terminations.prefix(3))
+        publishScreen()
     }
 
     // MARK: Menu bar
@@ -398,6 +448,22 @@ final class AppModel {
         return nil
     }
 
+}
+
+/// Spaces orphan report reads 10 s apart while a Host is exposed.
+private final class OrphanPoll: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last: TimeInterval?
+
+    func due(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        lock.withLock {
+            if let last, now - last < 10 { return false }
+            last = now
+            return true
+        }
+    }
+
+    func reset() { lock.withLock { last = nil } }
 }
 
 /// Remembers the last activity change token; confined to the store queue.

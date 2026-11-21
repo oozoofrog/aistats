@@ -10,7 +10,11 @@ protocol StorageTimeline: AnyObject {
 }
 
 final class DispatchTimeline: StorageTimeline, @unchecked Sendable {
-    private let queue = DispatchQueue(label: "aistats.storage", qos: .utility)
+    private let queue: DispatchQueue
+
+    init(label: String = "aistats.storage") { queue = DispatchQueue(label: label, qos: .utility) }
+
+    func sync(_ block: () -> Void) { queue.sync(execute: block) }
 
     func now() -> Date { Date() }
 

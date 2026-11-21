@@ -29,9 +29,10 @@ requests() {
   echo '{"jsonrpc":"2.0","id":11,"method":"ping","result":{}}'
   echo '{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"get_simulator_usage","arguments":{}}}'
   echo '{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"get_developer_storage","arguments":{}}}'
+  echo '{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"get_orphan_processes","arguments":{}}}'
 }
 
-check() { echo "$OUT" | python3 -c "import json,sys
+check() { echo "$OUT" | python3 -c "import json,sys,os
 rs={}; lines=[]; nulls=[]
 for l in sys.stdin:
     lines.append(l); o=json.loads(l); rs[o.get('id')]=o
@@ -43,7 +44,7 @@ $1" || { echo "FAIL: $2"; echo "$OUT" | cut -c1-600; [ -n "${SMOKE_KEEP:-}" ] &&
 # 1) No app running: history reports that honestly.
 OUT=$(requests | "$CLI" mcp)
 check "assert rs[1]['result']['protocolVersion']=='2025-06-18' and 'diagnose_system' in rs[1]['result']['instructions']" "initialize"
-check "assert [t['name'] for t in rs[2]['result']['tools']]==['get_system_stats','get_top_processes','get_stats_history','diagnose_system','find_processes','track_processes','wait_for','get_environment','get_process_tree','get_simulator_usage','get_developer_storage','get_agent_sessions']" "tools/list"
+check "assert [t['name'] for t in rs[2]['result']['tools']]==['get_system_stats','get_top_processes','get_stats_history','diagnose_system','find_processes','track_processes','wait_for','get_environment','get_process_tree','get_simulator_usage','get_developer_storage','get_agent_sessions','get_orphan_processes']" "tools/list"
 check "s=sc(3); assert s['memory']['totalBytes']>0 and (s['cpu']['usagePercent'] is None if 'cpu' in s.get('unavailable',[]) else 0<=s['cpu']['usagePercent']<=100) and len(s['topProcesses'])<=5" "get_system_stats"
 check "assert len(sc(4)['processes'])==3" "get_top_processes"
 check "r=rs[5]['result']; assert r['structuredContent']['recording'] is False and 'not running' in r['content'][0]['text']" "history without app"
@@ -60,6 +61,10 @@ check "r=rs[13]['result']; s=r['structuredContent']; assert not r['isError'] and
 export STORAGE=$("$CLI" storage --json)
 check "import os; c=json.loads(os.environ['STORAGE']); assert set(c)==set(sc(13)) and c['storage'] is None and c['storageReason']=='no_report'" "storage --json prints the get_developer_storage object"
 if "$CLI" storage --bogus >/dev/null 2>&1; then echo "FAIL: storage accepts --bogus"; exit 1; else echo "ok - storage rejects unknown options"; fi
+check "r=rs[14]['result']; s=r['structuredContent']; assert not r['isError'] and s['processes']==[] and s['coverageSince'] is None and s['reason'] is None and s['matched']==0 and s['evictedRecords']==0 and size(14)<=9216 and not os.path.exists(os.path.join(os.environ['AISTATS_HOME'],'lineage'))" "get_orphan_processes without lineage writes nothing"
+export ORPHANS=$("$CLI" orphans --json)
+check "import os; c=json.loads(os.environ['ORPHANS']); assert set(c)==set(sc(14)) and c['processes']==[]" "orphans --json prints the get_orphan_processes object"
+if "$CLI" orphans --kill >/dev/null 2>&1; then echo "FAIL: orphans accepts --kill"; exit 1; else echo "ok - orphans rejects unknown options"; fi
 
 # 2) Fake what the app records: 3 minutes of samples ending now.
 python3 - <<'PY'

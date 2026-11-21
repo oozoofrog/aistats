@@ -302,18 +302,19 @@ public final class MCPServer: @unchecked Sendable {
 
     static let instructions = """
     Current user's processes only.
-    Slow Mac or heavy job readiness: diagnose_system
-    Current readings: get_system_stats
+    Slow Mac, heavy job readiness: diagnose_system
+    Live readings: get_system_stats
     Rank CPU or memory: get_top_processes
-    Look up PID, name, path or TCP listener: find_processes
-    Monitor use over time: track_processes
-    Wait for a condition: wait_for
-    OS, chip, toolchain versions: get_environment
-    Past resource trends: get_stats_history
-    Sessions, busy process owners: get_agent_sessions
+    PID, name, path or TCP listener: find_processes
+    Monitor over time: track_processes
+    Wait for condition: wait_for
+    OS, chip, toolchain: get_environment
+    Past trends: get_stats_history
+    Sessions, process owners: get_agent_sessions
     Process tree: get_process_tree
     Simulators: get_simulator_usage
     Disk use: get_developer_storage
+    Left by ended agents: get_orphan_processes
     History needs the menu app. A wait lasts at most 55 seconds. Keep a startToken to guard against PID reuse. Structured content fits 4096 bytes. Omission counts mark trimmed lists.
     """
 
@@ -496,6 +497,12 @@ public final class MCPServer: @unchecked Sendable {
             ]],
             "annotations": ["readOnlyHint": true, "openWorldHint": false]
         ],
+        [
+            "name": "get_orphan_processes", "title": "Orphan processes",
+            "description": "List live processes that ended agent sessions left behind, from lineage the menu app records. An empty list covers only the time since coverageSince. Never signals a process.",
+            "inputSchema": ["type": "object", "properties": [String: Any]()],
+            "annotations": ["readOnlyHint": true, "openWorldHint": false]
+        ],
     ]
 
     static let toolNames = Set(tools.compactMap { $0["name"] as? String })
@@ -532,6 +539,10 @@ public final class MCPServer: @unchecked Sendable {
                 guard args.isEmpty else { throw ToolError("get_developer_storage takes no arguments") }
                 record(name)
                 return try storageResponse(DeveloperStorage.collect(home: history.directory), id: id)
+            case "get_orphan_processes":
+                guard args.isEmpty else { throw ToolError("get_orphan_processes takes no arguments") }
+                record(name)
+                return try orphanResponse(OrphanReport.collect(home: activity.directory, presences: activity.connectedAgents()), id: id)
             case "get_agent_sessions":
                 for key in ["calls", "limit"] where args[key] != nil && !(args[key] is NSNumber) {
                     throw ToolError("\(key) requires an integer")
@@ -651,6 +662,15 @@ public final class MCPServer: @unchecked Sendable {
             if fits(body, id: id) { return result(id: id, body) }
         } while report.trim()
         throw ToolError("Simulator usage exceeds response budget")
+    }
+
+    func orphanResponse(_ orphans: OrphanReport, id: Any) throws -> [String: Any] {
+        var report = orphans
+        repeat {
+            let body = try toolResult(text: report.summaryLine, json: report)
+            if fits(body, id: id) { return result(id: id, body) }
+        } while report.trim()
+        throw ToolError("Orphan report exceeds response budget")
     }
 
     func storageResponse(_ storage: DeveloperStorage, id: Any) throws -> [String: Any] {
