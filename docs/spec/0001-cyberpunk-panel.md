@@ -426,13 +426,13 @@ Verify text and operability contrast from the intended sRGB colors and the effec
 | PERF-001 | The Animation Clock MUST NOT operate when no Host is exposed. | Trace for 60 s after close. Repeat with each Host hidden, minimized, or fully covered. Count zero animation ticks. |
 | PERF-002 | The app MUST NOT update closed Host content. | Use the closed Host check below with one Host closed and then both Hosts closed. Require zero screen updates, Render Commits, Canvas calls, and frame deliveries for each closed Host. |
 | PERF-003 | The app MUST write closed-panel Status Item properties only for a change in the Status Item presentation. | Run ten refreshes with equal values and equal tooltip text. Verify zero title, image, and tooltip writes. |
-| PERF-004 | The closed-panel app MUST keep its mean CPU Percentage below 1% over 60 seconds. | Run the CPU check with both Hosts closed. Require `mean < 1.0` in each run. |
+| PERF-004 | The closed-panel app MUST keep its mean CPU Percentage below 1% over 60 seconds, including the SDD 0013 Lineage Recorder. | Run the CPU check with both Hosts closed. Repeat with Closed-Panel Recording on and eight live Sessions. Require `mean < 1.0` in each run. |
 | PERF-005 | The open-panel app MUST keep its mean CPU Percentage at or below 8% over 60 seconds. | Run the CPU check for each open scenario. Require `mean ≤ 8.0` in each run. |
 | PERF-006 | The open-panel app MUST keep each one-second CPU Percentage sample at or below 25%. | Use the open-panel CPU samples from PERF-005. Require `peak ≤ 25.0` in each run. |
 | PERF-007 | The app MUST use at most one Animation Clock for all Hosts. | Expose both Hosts and run the Busy sweep in multiple rows. Count one enabled animation source. |
 | PERF-008 | The Animation Clock MUST keep the frame rate at 30 fps or less. | Trace for 20 s through boot, sample changes, and concurrent registration actions. Check frame intervals and one-second tick counts. |
 | PERF-009 | Ambient loops MUST stay within the effective limits in Table 5. | Check each effect in active and quiet modes. Count draws per Host and effect, including overlap with other loops or one-shots. |
-| PERF-010 | The app MUST NOT start a process scan without an Exposed Host. | Close the last Exposed Host with a scan request queued. Verify no scan starts until a Host becomes exposed. |
+| PERF-010 | The app MUST NOT start a process scan without an Exposed Host, except a Lineage Recorder read under SDD 0013 Closed-Panel Recording. | Close the last Exposed Host with a scan request queued. Verify no scan starts until a Host becomes exposed. Repeat with Closed-Panel Recording on and one live Session. Verify only Lineage Recorder reads, and no tree, top-process, or origin evaluation. Turn the setting off. Verify zero reads from 2 s later. |
 | PERF-011 | The app MUST disconnect a Host's screen-data subscription synchronously when that Host starts to close. | Trace close start and subscription removal on the main actor. Inject data during close. Verify that the Panel subtree receives no update from close start onward. |
 | PERF-012 | The app MUST cut a Host's frame delivery synchronously when that Host starts to close. | Close between clock scheduling and delivery. Verify that delivery is disabled by return from the close-start callback. Count zero subsequent frame deliveries and Canvas calls. |
 | PERF-013 | A scheduled Host delivery MUST recheck exposure and subscription identity immediately before it runs. | Queue a data update and a frame. Close the Host before they run. Test drain after close and after immediate reopen. Verify that the old deliveries do not run. |
@@ -441,7 +441,7 @@ Verify text and operability contrast from the intended sRGB colors and the effec
 
 ### Closed Host and occlusion checks
 
-Use one main-actor exposure gate per Host. Resolve the popover's hosting window after its content attaches. Read `occlusionState.contains(.visible)` for each Host's own window. Treat partial visibility as exposure. Track the union of Exposed Hosts for process-scan eligibility.
+Use one main-actor exposure gate per Host. Resolve the popover's hosting window after its content attaches. Read `occlusionState.contains(.visible)` for each Host's own window. Treat partial visibility as exposure. Track the union of Exposed Hosts for process-scan eligibility. The SDD 0013 Lineage Recorder uses its own Active Recording rule. Without an Exposed Host, it reads the process table only while Closed-Panel Recording is on. [ADR 0009](../adr/0009-orphan-lineage.md) records this exception.
 
 At close start, disconnect the Host's screen-data subscription and disable frame delivery on the main actor. Detach the Panel subtree from any retained Host shell. Before delivery, check current exposure and subscription identity. Apply this gate to queued screen updates, frame deliveries, and Canvas draws. A previous exposure's work cannot update a new exposure. Rebuild from the latest Screen Snapshot at the next exposure. Keep the sampler, history, and changed Status Item presentation active. Exclude macOS chrome redraws from Panel render counts.
 
@@ -478,7 +478,7 @@ Let t be elapsed monotonic time in seconds. Let c be cumulative process CPU time
 
 | Scenario | Input starting at the first interval |
 | --- | --- |
-| Closed idle | Keep both Hosts closed. Keep the normal sampling and recording paths active. Keep agent activity unchanged. |
+| Closed idle | Keep both Hosts closed. Keep the normal sampling and recording paths active. Keep agent activity unchanged. For the PERF-004 recorder run, turn Closed-Panel Recording on and keep eight Sessions live. |
 | Open quiet, each Host | Open only the selected Host at the first boundary. Keep that Host exposed without further input. Use a fixed Warning and valid CPU history. |
 | Open active, each Host | Open only the selected Host at the first boundary. Use the Warning Fixture. Move focus or scroll every eight seconds. Hold a registration busy from second 20 to second 35. |
 | Both Hosts exposed | Start with the fallback window exposed. Open the popover at the first boundary. Give the popover the active input sequence. Inject a new recent call every eight seconds. Keep both Hosts partly visible. |
