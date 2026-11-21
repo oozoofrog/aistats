@@ -31,6 +31,7 @@
 - [ADR 0007 · Confirmation dialog hosting](../adr/0007-confirmation-dialog-hosting.md)
 - [ADR 0008 · Cross-session track cursor storage](../adr/0008-cross-session-track-cursors.md)
 - [ADR 0009 · Record observed descendant identities for the orphan report](../adr/0009-orphan-lineage.md)
+- [ADR 0010 · Measure a fixed set of developer directories in the app](../adr/0010-storage-accounting.md)
 
 ## Document conventions
 

@@ -2,6 +2,7 @@
 
 Status · Proposed
 Issue · [#13](https://github.com/oozoofrog/aistats/issues/13)
+Proposed decision · [ADR 0010 · Measure a fixed set of developer directories in the app](../adr/0010-storage-accounting.md)
 
 ## Purpose and scope
 
