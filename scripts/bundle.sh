@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds release binaries and assembles dist/AIStats.app (ad-hoc signed).
+# Builds release binaries and assembles dist/AIStats.app.
+# Signs with $AISTATS_SIGN_IDENTITY (a codesigning identity name or SHA-1 hash) when it is set, else ad-hoc.
 # Uses eyebuild when it is installed (build caches off the internal disk), else plain `swift build`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -29,8 +30,9 @@ done
 cp -R "$FONT_BUNDLE" "$STAGE/Contents/Resources/"
 cp Resources/Info.plist "$STAGE/Contents/Info.plist"
 cp Resources/AppIcon.icns "$STAGE/Contents/Resources/AppIcon.icns"
-codesign --force --sign - "$STAGE/Contents/MacOS/aistats"
-codesign --force --sign - "$STAGE"
+IDENTITY="${AISTATS_SIGN_IDENTITY:--}"
+codesign --force --sign "$IDENTITY" "$STAGE/Contents/MacOS/aistats"
+codesign --force --sign "$IDENTITY" "$STAGE"
 codesign --verify --strict "$STAGE"
 if [ -d "$APP" ]; then
   # Atomic exchange of the two bundles (running processes keep their open binaries).

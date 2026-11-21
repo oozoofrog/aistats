@@ -20,6 +20,7 @@ struct ProcessTreeView: View {
     @State private var selected: String?
     @FocusState private var focused: Bool
     @AccessibilityFocusState private var accessibleRow: String?
+    @Environment(\.panelTheme) private var theme
 
     private func id(_ pid: Int32) -> String { tree.nodes[pid]?.identity ?? String(pid) }
     private func sessionID(_ s: ProcessTree.Session) -> String { "session/" + id(s.serverPid) }
@@ -73,12 +74,14 @@ struct ProcessTreeView: View {
         let selectedItem = rows.first { $0.id == selected }
         let scale = rows.compactMap { $0.pids.isEmpty ? nil : tree.total($0.pids).value(metric) }.max() ?? 1
         VStack(alignment: .leading, spacing: 4) {
-            ScrollView(.horizontal) {
-                HStack {
-                    chip("전체", "all")
-                    ForEach(tree.sessions, id: \.serverPid) { chip("\($0.name) · \($0.serverPid)", sessionID($0)) }
-                    chip("출발점 불명 \(tree.unattributedCount)", "unknown")
+            ScrollViewReader { chips in
+                ScrollView(.horizontal) {
+                    KeyChoice(label: "필터", options: filters, selection: Binding(get: { filter }, set: { key in
+                        guard key != filter else { return }
+                        filter = key; selected = nil; expanded.formUnion(["agents", "unknown"])
+                    }))
                 }
+                .onChange(of: filter) { _, key in chips.scrollTo(key) }
             }
             Text("\(metric.label) · 자체 / 하위 합계").font(.caption)
             ScrollViewReader { reader in
@@ -112,6 +115,7 @@ struct ProcessTreeView: View {
                     if let selected, !ids.contains(selected) { self.selected = ids.first }
                 }
                 .onChange(of: selected) { _, key in if let key { reader.scrollTo(key); accessibleRow = key } }
+                .onChange(of: filter) { _, _ in if let first = rows.first { reader.scrollTo(first.id, anchor: .topLeading) } }
             }
             if let item = selectedItem, item.pids.count == 1, let pid = item.pids.first, let node = tree.nodes[pid] {
                 Text(tree.breadcrumb(pid)).textSelection(.enabled)
@@ -125,10 +129,9 @@ struct ProcessTreeView: View {
         }
     }
 
-    private func chip(_ label: String, _ key: String) -> some View {
-        Button(label) { filter = key; selected = nil; expanded.formUnion(["agents", "unknown"]) }
-            .buttonStyle(.bordered).accessibilityAddTraits(filter == key ? .isSelected : [])
-            .tint(filter == key ? .accentColor : .secondary)
+    private var filters: [(value: String, title: String)] {
+        [("all", "전체")] + tree.sessions.map { (sessionID($0), "\($0.name) · \($0.serverPid)") }
+            + [("unknown", "출발점 불명 \(tree.unattributedCount)")]
     }
 
     private func activate(_ item: TreeItem) {
@@ -147,7 +150,7 @@ struct ProcessTreeView: View {
         let agent = node.map { tree.agents.contains($0.pid) } ?? false
         let server = tree.sessions.contains { $0.serverPid == node?.pid }
         return HStack(spacing: 4) {
-            Text(item.prefix).font(.caption.monospaced()).accessibilityHidden(true)
+            Text(item.prefix).font(.caption.monospaced()).foregroundStyle(theme.detail).accessibilityHidden(true)
             if item.expandable {
                 Button {
                     activate(item)
@@ -163,13 +166,17 @@ struct ProcessTreeView: View {
             }
             Button { activate(item) } label: {
                 HStack {
-                    Text(item.title).foregroundStyle(agent ? Color.green : server ? Color.secondary : heavy ? Color.orange : Color.primary)
+                    Text(item.title).foregroundStyle(agent ? Ink.green.color : server ? theme.detail : heavy ? Ink.amber.color : Ink.text.color)
                     if let node, !item.link {
                         Text("\(item.pids.count > 1 ? "—" : node.own.display(metric)) / \(sum.display(metric, total: true))")
-                        ProgressView(value: min(1, (sum.value(metric) ?? 0) / max(1, scale))).frame(width: 35).accessibilityHidden(true)
+                            .foregroundStyle(theme.detail)
+                        ProgressView(value: min(1, (sum.value(metric) ?? 0) / max(1, scale))).frame(width: 35)
+                            .tint(Ink.cyan.color).accessibilityHidden(true)
                     }
                 }
             }.buttonStyle(.plain).accessibilityFocused($accessibleRow, equals: item.id).accessibilityAddTraits(selected == item.id ? .isSelected : [])
-        }.font(.caption).background(selected == item.id ? Color.accentColor.opacity(0.18) : .clear)
+        }
+        .font(.caption).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+        .background(selected == item.id ? Ink.cyan.color.opacity(0.18) : .clear)
     }
 }

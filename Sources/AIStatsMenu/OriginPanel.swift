@@ -1,6 +1,8 @@
+import AppKit
 import StatsCore
 import SwiftUI
 import UserNotifications
+import os
 
 extension OriginMetric {
     var label: String {
@@ -80,24 +82,32 @@ struct OriginPanel: View {
     @State private var showTree = true
     @State private var requesting = false
     @State private var message = ""
+    @State private var offerSettings = false
 
     var body: some View {
         DisclosureGroup("프로세스 트리", isExpanded: $showTree) {
             VStack(alignment: .leading) {
-                Picker("정렬 기준", selection: $metric) {
-                    ForEach(OriginMetric.allCases, id: \.self) { Text($0.label).tag($0) }
-                }.pickerStyle(.segmented)
+                KeyChoice(label: "정렬 기준", options: OriginMetric.allCases.map { ($0, $0.label) }, selection: $metric)
                 ProcessTreeView(tree: tree, metric: metric)
                 OriginThreshold(metric: metric).id(metric)
-                Toggle("선택한 기준 도달 시 알림", isOn: Binding(get: { enabled }, set: toggle))
-                    .disabled(requesting)
-                if !message.isEmpty { Text(message) }
+                KeyToggle(title: "선택한 기준 도달 시 알림", isOn: Binding(get: { enabled }, set: toggle), disabled: requesting)
+                if !message.isEmpty {
+                    Text(message).fixedSize(horizontal: false, vertical: true)
+                    if offerSettings {
+                        KeyButton(title: "알림 설정 열기") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
+                        }
+                    }
+                }
             }.padding(.leading, 6)
         }
+        .environment(\.colorScheme, .dark)
+        .foregroundStyle(Ink.text.color)
     }
 
     private func toggle(_ value: Bool) {
         message = ""
+        offerSettings = false
         guard value else { enabled = false; return }
         guard OriginAlertRule.supportsNotifications else {
             message = "알림을 사용하려면 AIStats 앱을 여세요."
@@ -108,9 +118,103 @@ struct OriginPanel: View {
             defer { requesting = false }
             do {
                 enabled = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
-                if !enabled { message = "시스템 설정에서 알림을 허용하세요." }
-            } catch { message = "알림 권한을 확인할 수 없습니다." }
+                if !enabled { message = "시스템 설정 › 알림에서 AIStats를 허용한 뒤 다시 켜세요."; offerSettings = true }
+            } catch {
+                let error = error as NSError
+                Logger(subsystem: "com.oozoofrog.aistats", category: "notifications")
+                    .error("requestAuthorization failed: \(error.domain, privacy: .public) \(error.code, privacy: .public)")
+                message = "알림 권한을 확인할 수 없습니다. 시스템 설정 › 알림에서 AIStats 항목을 확인한 뒤 다시 켜세요."
+                offerSettings = true
+            }
         }
+    }
+}
+
+/// Segmented choice that Tab reaches without macOS Keyboard Navigation; Left and Right change the selection.
+struct KeyChoice<Value: Hashable>: View {
+    let label: String
+    let options: [(value: Value, title: String)]
+    @Binding var selection: Value
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: S.xxs) {
+            ForEach(options.indices, id: \.self) { i in
+                let option = options[i]
+                let on = option.value == selection
+                Text(option.title)
+                    .lineLimit(1).fixedSize()
+                    .padding(.horizontal, S.sm).padding(.vertical, S.xxs)
+                    .foregroundStyle(on ? Ink.ground.color : Ink.text.color)
+                    .background(on ? Ink.cyan.color : Ink.track.color, in: Chamfer(cut: S.xs))
+                    .contentShape(Rectangle())
+                    .onTapGesture { if selection != option.value { selection = option.value }; focused = true }
+                    .id(option.value)
+            }
+        }
+        .padding(S.xxs)
+        .focusable().focusEffectDisabled().focused($focused)
+        .overlay {
+            if focused {
+                Chamfer(cut: S.smallChamfer).strokeBorder(Ink.focus.color, lineWidth: S.focusStroke)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
+        .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
+            guard !options.isEmpty else { return .ignored }
+            let i = options.firstIndex { $0.value == selection } ?? 0
+            let next = options[press.key == .leftArrow ? max(0, i - 1) : min(options.count - 1, i + 1)].value
+            if next != selection { selection = next }
+            return .handled
+        }
+        .accessibilityRepresentation {
+            Picker(label, selection: $selection) {
+                ForEach(options.indices, id: \.self) { Text(options[$0].title).tag(options[$0].value) }
+            }.pickerStyle(.radioGroup)
+        }
+    }
+}
+
+/// Button that Tab reaches without macOS Keyboard Navigation; Space or Return activates it.
+struct KeyButton: View {
+    let title: String
+    let action: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Button(title, action: action)
+            .buttonStyle(PanelButtonStyle(kind: .secondary, focused: focused))
+            .focusable().focusEffectDisabled().focused($focused)
+            .onKeyPress(keys: [.space, .return]) { _ in action(); return .handled }
+    }
+}
+
+/// Checkbox that Tab reaches without macOS Keyboard Navigation; Space toggles it.
+struct KeyToggle: View {
+    let title: String
+    @Binding var isOn: Bool
+    var disabled = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: S.xs) {
+            Image(systemName: isOn ? "checkmark.square.fill" : "square")
+                .foregroundStyle(isOn ? Ink.cyan.color : Ink.muted.color)
+            Text(title)
+        }
+        .padding(S.xxs)
+        .contentShape(Rectangle())
+        .onTapGesture { if !disabled { focused = true; isOn.toggle() } }
+        .focusable().focusEffectDisabled().focused($focused)
+        .overlay {
+            if focused {
+                Chamfer(cut: S.smallChamfer).strokeBorder(Ink.focus.color, lineWidth: S.focusStroke)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
+        .onKeyPress(.space) { guard !disabled else { return .ignored }; isOn.toggle(); return .handled }
+        .opacity(disabled ? 0.5 : 1)
+        .accessibilityRepresentation { Toggle(title, isOn: $isOn).disabled(disabled) }
     }
 }
 

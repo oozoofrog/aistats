@@ -31,6 +31,7 @@ Requires macOS 14 or later. Only the current user's processes are readable (othe
 swift build -c release            # aistats and AIStatsMenu
 swift test                        # unit tests
 scripts/bundle.sh                 # dist/AIStats.app, ad-hoc signed
+AISTATS_SIGN_IDENTITY=<identity SHA-1> scripts/bundle.sh   # signed with that identity
 scripts/smoke-mcp.sh dist/AIStats.app/Contents/MacOS/aistats   # end-to-end MCP checks
 ```
 
