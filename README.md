@@ -22,6 +22,7 @@ Requires macOS 14 or later. Only the current user's processes are readable (othe
 | `wait_for` | Wait (up to 55 s per call) for `cpu_idle`, `process_exit` `memory_pressure_normal`, `process_started`, `disk_free_above` or `port_listening` instead of sleeping; on timeout it says what is still busy |
 | `get_environment` | macOS version, chip, RAM, cores, Xcode and Swift versions |
 | `get_process_tree` | Rank agent subtrees, shared hosts and unattributed processes by CPU, footprint or disk I/O. Use `aistats tree --sort mem` for a terminal tree. |
+| `get_simulator_usage` | CPU (percent of one core), summed footprint and process count for each booted simulator device, keyed by its `launchd_sim` root PID, start token and boot time. Host services are excluded; no UDID, name or owner. Use `aistats sims --json` in a terminal. |
 | `get_agent_sessions` | List live sessions, recent calls, and CPU leaders by their nearest agent process. Set `origin: true` for CPU, memory or disk rankings, launch chains and session or ancestor filters |
 | `get_stats_history` | Trend over the last hour, recording state and recovery hints (recorded by the menu bar app) |
 
@@ -65,6 +66,7 @@ aistats wait disk_free_above --above-gib 10
 aistats preflight --json          # fast readiness check before heavy work
 aistats stats                     # one-shot system summary
 aistats top --sort memory --limit 10
+aistats sims --json               # CPU and memory per booted simulator device
 aistats track --name Xcode --children --duration 60 --spike-cpu 200
 aistats --help
 ```

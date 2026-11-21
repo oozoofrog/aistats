@@ -27,6 +27,7 @@ requests() {
   echo '{"jsonrpc":"2.0","id":true,"method":"ping"}'
   echo "{\"jsonrpc\":\"2.0\",\"id\":\"$(printf 'y%.0s' $(seq 300))\",\"method\":\"ping\"}"
   echo '{"jsonrpc":"2.0","id":11,"method":"ping","result":{}}'
+  echo '{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"get_simulator_usage","arguments":{}}}'
 }
 
 check() { echo "$OUT" | python3 -c "import json,sys
@@ -41,7 +42,7 @@ $1" || { echo "FAIL: $2"; echo "$OUT" | cut -c1-600; [ -n "${SMOKE_KEEP:-}" ] &&
 # 1) No app running: history reports that honestly.
 OUT=$(requests | "$CLI" mcp)
 check "assert rs[1]['result']['protocolVersion']=='2025-06-18' and 'diagnose_system' in rs[1]['result']['instructions']" "initialize"
-check "assert [t['name'] for t in rs[2]['result']['tools']]==['get_system_stats','get_top_processes','get_stats_history','diagnose_system','find_processes','track_processes','wait_for','get_environment','get_process_tree','get_agent_sessions']" "tools/list"
+check "assert [t['name'] for t in rs[2]['result']['tools']]==['get_system_stats','get_top_processes','get_stats_history','diagnose_system','find_processes','track_processes','wait_for','get_environment','get_process_tree','get_simulator_usage','get_agent_sessions']" "tools/list"
 check "s=sc(3); assert s['memory']['totalBytes']>0 and (s['cpu']['usagePercent'] is None if 'cpu' in s.get('unavailable',[]) else 0<=s['cpu']['usagePercent']<=100) and len(s['topProcesses'])<=5" "get_system_stats"
 check "assert len(sc(4)['processes'])==3" "get_top_processes"
 check "r=rs[5]['result']; assert r['structuredContent']['recording'] is False and 'not running' in r['content'][0]['text']" "history without app"
@@ -50,6 +51,10 @@ check "assert rs[7]['error']['code']==-32601" "unknown method"
 check "assert [o['error']['code'] for o in nulls]==[-32700,-32600,-32600,-32600,-32600,-32600], nulls" "parse error, batch, scalar, bad id and over-long id rejected"
 check "assert rs[11]['error']['code']==-32600 and 'result' not in rs[11]" "a request carrying result is rejected"
 check "assert rs[9]['error']['code']==-32600 and 10 not in rs" "jsonrpc 1.0 rejected, batch not executed"
+check "r=rs[12]['result']; s=r['structuredContent']; assert not r['isError'] and s['bootedCount']>=len(s['devices']) and 'hostServices' not in s and all(d['ownerUnknown']=='no_source' and not {'udid','name','runtime','owner'}&set(d) for d in s['devices']) and size(12)<=9216" "get_simulator_usage"
+export SIMS=$("$CLI" sims --json)
+check "import os; c=json.loads(os.environ['SIMS']); assert set(c)==set(sc(12)) and all(not {'udid','name','runtime','owner'}&set(d) for d in c['devices'])" "sims --json prints the get_simulator_usage object"
+if "$CLI" sims --bogus >/dev/null 2>&1; then echo "FAIL: sims accepts --bogus"; exit 1; else echo "ok - sims rejects unknown options"; fi
 
 # 2) Fake what the app records: 3 minutes of samples ending now.
 python3 - <<'PY'

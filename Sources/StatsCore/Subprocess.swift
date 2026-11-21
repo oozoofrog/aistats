@@ -63,8 +63,12 @@ public enum Subprocess {
     static let outputCap = 256 * 1024
     static let pipeGrace: TimeInterval = 2
 
+    /// Test hook (SIM-032): receives the executable of each launch that the current task attempts.
+    @TaskLocal static var launchObserver: (@Sendable (String) -> Void)?
+
     public static func run(_ executable: String, _ arguments: [String], environment: [String: String]? = nil,
                            timeout: TimeInterval, currentDirectory: URL? = nil, cancel: CancelToken? = nil) throws -> Result {
+        launchObserver?(executable)
         var outFDs: [Int32] = [-1, -1], errFDs: [Int32] = [-1, -1]
         guard pipe(&outFDs) == 0 else { throw LaunchError(description: "pipe failed: \(String(cString: strerror(errno)))") }
         guard pipe(&errFDs) == 0 else {

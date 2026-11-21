@@ -47,6 +47,9 @@ public struct ProcessTree: Sendable {
         let groupable: Bool
         public let startToken: String?
         public let started: Date
+        /// The kernel start time from the table, to check a later direct read against PID reuse.
+        let startSec: Int
+        let startUsec: Int32
         public var own: TreeMetrics
         public var total: TreeMetrics
         public var count = 1
@@ -66,6 +69,7 @@ public struct ProcessTree: Sendable {
     public private(set) var sessions: [Session] = []
     public private(set) var hosts: [Int32: [Int32]] = [:]
     public private(set) var unknown: [Int32] = []
+    public private(set) var deviceRoots: Set<Int32> = []
     public let observedAt: Date
     public var unattributedCount: Int {
         let excluded = agents.union(hosts.keys)
@@ -79,23 +83,26 @@ public struct ProcessTree: Sendable {
     }
     public var agents: Set<Int32> { Set(sessions.map(\.agentPid)) }
 
-    public static func measure(store: ActivityStore) -> Self {
+    public static let deviceRootName = "launchd_sim"
+
+    public static func measure(store: ActivityStore, deviceRoots: Bool = false) -> Self {
         let sample = SystemSampler().measure(interval: 1, includeProcesses: true)
         return Self(entries: Proc.currentUserTable() ?? [], processes: sample.topProcesses ?? [],
-                    sessions: store.connectedAgents(), at: sample.timestamp)
+                    sessions: store.connectedAgents(), at: sample.timestamp, deviceRoots: deviceRoots)
     }
 
-    public init(entries: [Proc.Entry], processes: [ProcessUsage], sessions: [ActivityStore.Presence], at date: Date) {
-        self.init(entries: entries, processes: processes, sessions: sessions, at: date, name: Proc.name) { entry, key in
+    public init(entries: [Proc.Entry], processes: [ProcessUsage], sessions: [ActivityStore.Presence], at date: Date, deviceRoots: Bool = false) {
+        self.init(entries: entries, processes: processes, sessions: sessions, at: date, deviceRoots: deviceRoots, name: Proc.name) { entry, key in
             Proc.matches(entry.pid, startSec: entry.startSec, startUsec: entry.startUsec) && Proc.isAlive(key)
         }
     }
 
     init(entries: [Proc.Entry], processes: [ProcessUsage], sessions presences: [ActivityStore.Presence], at date: Date,
-         name: (Int32) -> String? = { _ in nil }, verify: (Proc.Entry, Proc.Key) -> Bool) {
+         deviceRoots detectDevices: Bool = false, name: (Int32) -> String? = { _ in nil }, verify: (Proc.Entry, Proc.Key) -> Bool) {
         observedAt = date
         let samples = Dictionary(processes.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
         for entry in entries where entry.pid > 1 {
+            if detectDevices && entry.comm == Self.deviceRootName { deviceRoots.insert(entry.pid) }
             let fullName = name(entry.pid)
             let row = samples[entry.pid].flatMap { row -> ProcessUsage? in
                 guard let start = row.startToken.flatMap(UInt64.init), verify(entry, .init(pid: entry.pid, start: start)) else { return nil }
@@ -106,7 +113,7 @@ public struct ProcessTree: Sendable {
             let validName = row == nil ? nil : fullName
             let cleanName = (validName ?? entry.comm).components(separatedBy: .controlCharacters).joined(separator: "�")
             nodes[entry.pid] = Node(pid: entry.pid, parent: entry.ppid, name: cleanName, groupable: validName != nil || entry.comm.utf8.count < 15, startToken: row?.startToken,
-                                    started: Date(timeIntervalSince1970: start), own: metrics, total: metrics)
+                                    started: Date(timeIntervalSince1970: start), startSec: entry.startSec, startUsec: entry.startUsec, own: metrics, total: metrics)
         }
         sessions = presences.compactMap { p in
             guard let agent = p.agentPid, let token = p.agentStartToken, let serverToken = p.startToken,
@@ -155,13 +162,14 @@ public struct ProcessTree: Sendable {
                 if !roots.contains(node.pid) { parentOf[node.pid] = parent.pid }
             } else if !roots.contains(node.pid) && hosts[node.pid] == nil { unknown.append(node.pid) }
         }
-        // Add each own reading once to each observed ancestor, stopping at the first agent.
+        // Add each own reading once to each observed ancestor, stopping at the first agent or Device Root.
+        let devices = deviceRoots
         for node in table.values {
-            var current = parentOf[node.pid]
+            var current = devices.contains(node.pid) ? nil : parentOf[node.pid]
             while let pid = current {
                 nodes[pid]?.total.add(node.own)
                 nodes[pid]?.count += 1
-                current = parentOf[pid]
+                current = devices.contains(pid) ? nil : parentOf[pid]
             }
         }
     }

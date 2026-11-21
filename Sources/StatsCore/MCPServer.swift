@@ -307,10 +307,11 @@ public final class MCPServer: @unchecked Sendable {
     Look up PID, name, path or TCP listener: find_processes
     Monitor resource use over time: track_processes
     Block until a condition holds: wait_for
-    OS, chip and toolchain versions: get_environment
+    OS, chip, toolchain versions: get_environment
     Past resource trends: get_stats_history
-    List sessions and attribute busy processes: get_agent_sessions
-    Show the process tree: get_process_tree
+    Sessions and busy process owners: get_agent_sessions
+    Process tree: get_process_tree
+    Simulator load: get_simulator_usage
     History needs the menu app. A wait lasts at most 55 seconds. Keep a startToken to guard against PID reuse. Structured content fits 4096 bytes. Omission counts mark trimmed lists.
     """
 
@@ -465,6 +466,15 @@ public final class MCPServer: @unchecked Sendable {
             "annotations": ["readOnlyHint": true, "openWorldHint": false]
         ],
         [
+            "name": "get_simulator_usage", "title": "Simulator usage",
+            "description": "Sum CPU (percent of one core) and footprint per booted simulator device, keyed by its launchd_sim root. No UDID or owner.",
+            "inputSchema": ["type": "object", "properties": [String: Any]()],
+            "outputSchema": ["type": "object", "required": ["observedAt", "bootedCount", "devices", "truncated"], "properties": [
+                "devices": ["type": "array", "items": ["type": "object", "properties": ["memoryBytes": ["type": "integer",
+                    "description": "Sum of footprints; shared memory can be counted more than once."]]]]]],
+            "annotations": ["readOnlyHint": true, "openWorldHint": false]
+        ],
+        [
             "name": "get_agent_sessions",
             "description": "List live sessions, recent calls and CPU leaders by nearest agent. Subagents share their parent agent.",
             "inputSchema": ["type": "object", "properties": [
@@ -505,6 +515,10 @@ public final class MCPServer: @unchecked Sendable {
                     if fits(body, id: id) { return result(id: id, body) }
                 } while report.trim()
                 throw ToolError("Process tree exceeds response budget")
+            case "get_simulator_usage":
+                guard args.isEmpty else { throw ToolError("get_simulator_usage takes no arguments") }
+                record(name)
+                return try simulatorResponse(SimulatorUsage.measure(store: activity), id: id)
             case "get_agent_sessions":
                 for key in ["calls", "limit"] where args[key] != nil && !(args[key] is NSNumber) {
                     throw ToolError("\(key) requires an integer")
@@ -615,6 +629,15 @@ public final class MCPServer: @unchecked Sendable {
             list.processes.removeLast()
             list.processesOmitted = top.count - list.processes.count
         }
+    }
+
+    func simulatorResponse(_ usage: SimulatorUsage, id: Any) throws -> [String: Any] {
+        var report = usage
+        repeat {
+            let body = try toolResult(text: report.summaryLine, json: report)
+            if fits(body, id: id) { return result(id: id, body) }
+        } while report.trim()
+        throw ToolError("Simulator usage exceeds response budget")
     }
 
     func findResponse(_ found: FindResult, id: Any) throws -> [String: Any] {

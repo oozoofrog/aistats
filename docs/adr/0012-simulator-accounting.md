@@ -35,6 +35,10 @@ Take each row value from the subtree total of its Device Root. `cpuPercent` uses
 
 `TreeMetrics` leaves `cpuPercent` or `memoryBytes` nil when no reading of that metric in the subtree is readable. In that case, omit the field from the row and list the metric in `partial` (SIM-050). Do not write `0` or `null`. `get_process_tree` already omits a nil metric in the same way. This amendment adds an exception to SIM-004 on purpose. SIM-004 stays MUST for every other case.
 
+A Device Root can have no verified sample row, for example when it starts after the sample and before the table read. Read its start token once more with `proc_pid_rusage` after the table read. Accept that token only when the kernel start time still matches the table entry. When the direct read gives no token, omit `startToken` from the row (SIM-051). Do not write an empty string or `0`. This is the second exception to SIM-004.
+
+Rank `top` only by Device Processes with a readable CPU reading, so that each member has all four SIM-009 fields. Round the row `cpuPercent` to one decimal, as the per-process readings are, so that the summation order does not change the output (RSZ-011). To fit the Payload Budget, remove `top` members before `devices` rows and count them in `topOmitted`. Each Device Root then keeps its row and its totals (RSZ-008).
+
 Keep the sum of footprints. Footprints can count shared memory more than once, so the sum can exceed the memory the device uses. State this limit in the `memoryBytes` field description in `tools/list`.
 
 Exclude host services. Observed host services run as separate launchd children or as root, so they are outside every Device Root subtree. Do not emit `hostServices` in v1. AIStats can identify a host service only by its name, and the root-owned `simdiskimaged` is not readable from the current-user table. This amendment changes SIM-011 from MAY to MUST NOT for v1 on purpose.
@@ -72,6 +76,9 @@ This decision amends SDD 0016 as follows:
 - Change the SIM-032 check to zero subprocess calls.
 - Add SIM-017 for partial totals.
 - Add SIM-018 for the own row of a nested root and SIM-019 for its exclusion from the outer row.
+- Add SIM-051 for a Device Root whose start time is unreadable. Change SIM-004 to refer to SIM-050 and SIM-051.
+- Exclude a Device Process without a readable CPU reading from `top` in SIM-009.
+- Extend SIM-014 with the Trimming order and a check with 255-byte names.
 
 ## Consequences
 
@@ -83,4 +90,4 @@ A change to the ProcessTree aggregation changes both the tree and the simulator 
 
 The report writes no file and needs no cleanup. Simulator disk use is covered by [SDD 0014](../spec/0014-dev-storage-breakdown.md).
 
-Verify the empty case, multiple synthetic roots, a nested root, exclusion of host services, partial metrics, a metric with no readable reading, the no-Xcode case and the latency check above.
+Verify the empty case, multiple synthetic roots, a nested root, exclusion of host services, partial metrics, a metric with no readable reading, a Device Root without a sample row, the no-Xcode case and the latency check above.
