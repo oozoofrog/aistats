@@ -309,7 +309,7 @@ public final class MCPServer: @unchecked Sendable {
 
     private static let selectorProperties: [String: Any] = [
         "pid": ["type": "integer", "minimum": 1, "description": "Process id."],
-        "startToken": ["type": "string", "description": "From find_processes; with pid, guards against pid reuse."],
+        "startToken": ["type": "string", "description": "From find_processes or get_top_processes; with pid, guards against pid reuse."],
         "name": ["type": "string", "minLength": 1, "maxLength": 64, "description": "Executable file name, case-insensitive."],
         "path": ["type": "string", "description": "Absolute executable path."],
         "match": ["type": "string", "enum": ["exact", "glob"], "default": "exact", "description": "How name/path are compared."],

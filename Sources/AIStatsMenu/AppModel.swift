@@ -136,7 +136,7 @@ final class AppModel {
             }
             if sampler.slowMetricReads != before { PanelTrace.marker("slow-sample") }
             let top = sampler.processCPUIsFresh
-                ? sampler.topProcesses(sortedBy: .cpu, limit: 3, from: snapshot.topProcesses ?? []) : []
+                ? sampler.topProcesses(sortedBy: .cpu, limit: 3, from: snapshot.topProcesses ?? [], includeParent: false) : []
             snapshot.topProcesses = nil
             DispatchQueue.main.async { self?.apply(snapshot: snapshot, top: top, generation: generation) }
         }

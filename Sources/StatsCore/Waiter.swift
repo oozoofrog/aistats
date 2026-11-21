@@ -35,6 +35,8 @@ public struct WaitResult: Codable, Sendable {
     }
 
     public struct Culprit: Codable, Sendable {
+        public var startToken: String?
+        public var ppid: Int32?
         public var pid: Int32
         public var name: String
         /// Average over the wait, percent of one core.
@@ -417,7 +419,11 @@ public final class Waiter: @unchecked Sendable {
             rows.append((k, Double(cpu - base) / (elapsed * 1e9) * 100))
         }
         return rows.sorted { $0.1 > $1.1 }.prefix(3).map { k, pct in
-            WaitResult.Culprit(pid: k.pid, name: Proc.name(k.pid) ?? "pid \(k.pid)", cpuPercent: Proc.round1(pct))
+            let name = Proc.name(k.pid)
+            let parent = Proc.parent(k.pid)
+            let live = Proc.isAlive(k)
+            return WaitResult.Culprit(startToken: k.token, ppid: live ? parent.flatMap { $0 > 0 ? $0 : nil } : nil,
+                                      pid: k.pid, name: (live ? name : nil) ?? "pid \(k.pid)", cpuPercent: Proc.round1(pct))
         }
     }
 

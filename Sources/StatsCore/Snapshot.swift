@@ -108,6 +108,8 @@ public struct Snapshot: Codable, Sendable {
 }
 
 public struct ProcessUsage: Codable, Sendable, Hashable {
+    public var startToken: String?
+    public var ppid: Int32?
     public var pid: Int32
     public var name: String
     /// Share of one core; can exceed 100 for multi-threaded processes (same as Activity Monitor).

@@ -20,6 +20,7 @@ public final class SystemSampler: @unchecked Sendable {
     private var netBuffer: [UInt8] = []
     /// Per pid: process start time (detects pid reuse), CPU time at the last sample, cached name.
     private var procCache: [Int32: (start: UInt64, cpuNs: UInt64, name: String)] = [:]
+    var readParent: (Int32) -> Int32? = Proc.parent
     private var lastProcTime: UInt64?
     /// Process CPU percentages are only meaningful when the previous process sample is recent.
     public static let maxProcessInterval: Double = 10
@@ -90,7 +91,7 @@ public final class SystemSampler: @unchecked Sendable {
     }
 
     /// Processes owned by the current user (others need root), sorted.
-    public func topProcesses(sortedBy sort: ProcessSort, limit: Int, from list: [ProcessUsage]) -> [ProcessUsage] {
+    public func topProcesses(sortedBy sort: ProcessSort, limit: Int, from list: [ProcessUsage], includeParent: Bool = true) -> [ProcessUsage] {
         let sorted: [ProcessUsage]
         switch sort {
         case .cpu: sorted = list.sorted { ($0.cpuPercent, $0.memoryBytes) > ($1.cpuPercent, $1.memoryBytes) }
@@ -98,9 +99,14 @@ public final class SystemSampler: @unchecked Sendable {
         }
         // Names are cached per process; re-read them for the few we return, since exec() keeps the
         // pid and start time but changes the program.
-        return sorted.prefix(max(0, limit)).map { p in
+        return sorted.prefix(max(0, limit)).compactMap { p in
             var p = p
-            p.name = Self.processName(p.pid)
+            let name = Self.processName(p.pid)
+            let parent = includeParent ? readParent(p.pid) : nil
+            guard let token = p.startToken else { return p }
+            guard let usage = Proc.usage(p.pid), String(usage.start) == token else { return nil }
+            p.name = name
+            p.ppid = parent.flatMap { $0 > 0 ? $0 : nil }
             return p
         }
     }
@@ -325,7 +331,7 @@ public final class SystemSampler: @unchecked Sendable {
             if processCPUIsFresh, let prev = cached?.cpuNs, cpuNs >= prev {
                 percent = Double(cpuNs - prev) / wall * 100
             }
-            result.append(ProcessUsage(pid: pid, name: name, cpuPercent: Self.round1(percent),
+            result.append(ProcessUsage(startToken: start == 0 ? nil : String(start), pid: pid, name: name, cpuPercent: Self.round1(percent),
                                        memoryBytes: info.ri_phys_footprint))
         }
         procCache = next
