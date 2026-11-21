@@ -2,6 +2,7 @@
 
 Status · Proposed
 Issue · [#12](https://github.com/oozoofrog/aistats/issues/12)
+Proposed decision · [ADR 0009 · Record observed descendant identities for the orphan report](../adr/0009-orphan-lineage.md)
 
 ## Purpose and scope
 

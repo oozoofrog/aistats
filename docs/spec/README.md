@@ -30,6 +30,7 @@
 - [ADR 0006 · Visual verification](../adr/0006-visual-verification.md)
 - [ADR 0007 · Confirmation dialog hosting](../adr/0007-confirmation-dialog-hosting.md)
 - [ADR 0008 · Cross-session track cursor storage](../adr/0008-cross-session-track-cursors.md)
+- [ADR 0009 · Record observed descendant identities for the orphan report](../adr/0009-orphan-lineage.md)
 
 ## Document conventions
 
