@@ -324,7 +324,7 @@ public final class MCPServer: @unchecked Sendable {
 
     private static let portProperty: [String: Any] = ["type": "integer", "minimum": 1, "maximum": 65535]
 
-    private static let selectorProperties: [String: Any] = [
+    private static let selectorProperties: [String: [String: Any]] = [
         "pid": ["type": "integer", "minimum": 1, "description": "Process id."],
         "startToken": ["type": "string", "description": "From find_processes or get_top_processes; with pid, guards against pid reuse."],
         "name": ["type": "string", "minLength": 1, "maxLength": 64, "description": "Executable file name, case-insensitive."],
@@ -334,18 +334,24 @@ public final class MCPServer: @unchecked Sendable {
                         "description": "With name or path: only processes with an argument (after argv[0]) containing this text, case-sensitive, e.g. --daemon. Processes whose arguments can't be read don't match (counted in argsUnreadable)."],
     ]
 
+    private static let compactSelectorProperties: [String: Any] = selectorProperties.mapValues { field in
+        var property = field
+        property.removeValue(forKey: "description")
+        return property
+    }
+
     static let tools: [[String: Any]] = [
         [
             "name": "get_system_stats",
             "title": "System stats",
-            "description": "Current CPU, memory (with pressure and swap), disk free space, network throughput, battery and thermal state of this Mac, measured over about half a second, plus the top 5 processes by CPU. For a yes/no 'is something wrong' answer use diagnose_system instead.",
+            "description": "Read current CPU, pressure, swap, disk, network, battery and thermal measurements over 0.5 s and the five CPU leaders. For a slowdown verdict use diagnose_system.",
             "inputSchema": ["type": "object", "properties": ["since": ["type": "string", "description": "Return changes since this snapshot cursor."]]],
             "annotations": ["readOnlyHint": true, "openWorldHint": false],
         ],
         [
             "name": "get_top_processes",
             "title": "Top processes",
-            "description": "Processes owned by the current user, ranked by CPU (percent of one core, measured over about a second) or by memory footprint. Use instead of ps/top. To look up one process by name or path use find_processes.",
+            "description": "Rank processes by CPU (percent of one core) or footprint. For one PID, name, path or listening port use find_processes.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
@@ -358,7 +364,7 @@ public final class MCPServer: @unchecked Sendable {
         [
             "name": "get_stats_history",
             "title": "Stats history",
-            "description": "How CPU, memory, network and free disk space changed over the last N minutes (up to 60): min/average/max plus up to maxPoints evenly spaced points (0 = summary only). Recorded every 2 seconds by the AIStats menu bar app; if the app is not running, the result says so.",
+            "description": "Read aggregates and evenly spaced points from the menu app's two-second history. maxPoints 0 returns window aggregates only.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
@@ -371,7 +377,7 @@ public final class MCPServer: @unchecked Sendable {
         [
             "name": "diagnose_system",
             "title": "Diagnose system",
-            "description": "Call first when the Mac feels slow (purpose slowdown) or before builds/tests/large jobs (purpose heavy_work). Measures ~1 s and returns status issue_detected|no_clear_issue|insufficient_data, up to 4 evidence items, most severe first (CPU ≥85%, load average ≥2× logical cores, memory pressure, thermal throttling, <10 GiB free, battery <20%), loadAverage [1,5,15 min], the 3 busiest processes, and for heavy_work a readiness of ready|caution|unknown.",
+            "description": "Explain a slowdown or assess readiness for heavy work using a one-second sample, three CPU leaders and up to four findings, severe first. Check CPU >=85%, load >=2x cores, memory pressure, thermal state, free disk <10 GiB and battery <20%.",
             "inputSchema": [
                 "type": "object",
                 "properties": ["purpose": ["type": "string", "enum": ["slowdown", "heavy_work"], "default": "slowdown"]],
@@ -381,7 +387,7 @@ public final class MCPServer: @unchecked Sendable {
         [
             "name": "find_processes",
             "title": "Find processes",
-            "description": "Look up by TCP listening port or exactly one of pid, name (executable file name) or path (absolute executable path); name/path match exact (default, name case-insensitive) or glob. Returns pid, startToken (identifies the instance across pid reuse), name, ppid and memory footprint; path only when you matched by path. A missing listener does not mean a free port. probeFree can briefly block another bind. Fields that can't be read are listed in unreadable, never reported as 0.",
+            "description": "Find by one PID, name, path or listening TCP port. A missing listener does not mean a free port. probeFree can briefly prevent another bind. Results identify instances and unreadable fields.",
             "inputSchema": [
                 "type": "object",
                 "properties": selectorProperties.merging(["port": portProperty, "probeFree": ["type": "boolean", "default": false], "limit": ["type": "integer", "minimum": 1, "maximum": 15, "default": 8]]) { a, _ in a },
@@ -391,10 +397,10 @@ public final class MCPServer: @unchecked Sendable {
         [
             "name": "track_processes",
             "title": "Track processes",
-            "description": "Watch processes in the background for up to 2 hours instead of polling top. action start (selector: pid[+startToken], name or path; includeChildren counts child spawns per minute and per executable, including short-lived ones) returns a trackId; status returns CPU (percent of one core) and memory footprint min/avg/max/last summed over members, largestProcessLifetimePeakBytes (the highest lifetime peak of any single member, so not comparable with the summed footprint), for name/path targets restartCount (a matching instance started after all earlier ones had exited) and additionalInstances (started while another was running), recent events, CPU spikes with the busiest threads (optionally a `sample` capture). stop ends a track of this session; list shows tracks. Status keeps working after the session ends. Max 4 running tracks per session; responses stay under 4 KiB (lists trimmed, with …Omitted counts).",
+            "description": "Monitor summed CPU (percent of one core) and footprint, plus the largest lifetime peak of one member. A restart follows all prior exits. An overlapping instance is additional. Include children for forks per minute and per executable. Up to four tracks can run per session. Start returns a trackId. Read status later, including after session exit. Stop applies only in the owning session.",
             "inputSchema": [
                 "type": "object",
-                "properties": selectorProperties.merging([
+                "properties": compactSelectorProperties.merging([
                     "since": ["type": "string", "description": "Status changes since this track cursor."],
                     "action": ["type": "string", "enum": ["start", "status", "stop", "list"]],
                     "trackId": ["type": "string", "description": "For status and stop."],
@@ -413,10 +419,10 @@ public final class MCPServer: @unchecked Sendable {
         [
             "name": "wait_for",
             "title": "Wait for",
-            "description": "Wait (up to timeoutSeconds, max 55) until a condition holds instead of sleeping or polling. cpu_idle: CPU below belowPercent for two consecutive 1 s readings — system-wide (percent of all cores) by default, or for a running trackId or a pid(+startToken)/name/path selector (percent of one core, summed; only readings of live matching processes count, so no match never means idle — unavailable if nothing matched, or once the pid or track is gone); on timeout returns the 3 busiest culprits. process_exit: pid (+startToken) exits; unavailable if not visible at the start. memory_pressure_normal: kernel memory pressure back to normal. CPU idle needs 2.5 s; normal pressure needs 1.5 s. process_started can miss processes shorter than a tick. Returns state met|timed_out|unavailable.",
+            "description": "Wait for a condition. cpu_idle needs two readings and a 2.5 s timeout (system CPU percent of all cores, process CPU percent of one core). Normal pressure needs 1.5 s. Only live matches count. No match or a lost target returns unavailable. On CPU timeout see the three busiest culprits. Short-lived processes can fall between polls.",
             "inputSchema": [
                 "type": "object",
-                "properties": selectorProperties.merging([
+                "properties": compactSelectorProperties.merging([
                     "condition": ["type": "string", "enum": ["cpu_idle", "process_exit", "memory_pressure_normal", "port_listening", "process_started", "disk_free_above"]],
                     "newInstancesOnly": ["type": "boolean", "default": false],
                     "aboveGiB": ["type": "number", "exclusiveMinimum": 0],
@@ -433,7 +439,7 @@ public final class MCPServer: @unchecked Sendable {
         [
             "name": "get_environment",
             "title": "Environment",
-            "description": "macOS version and build, CPU architecture and chip, RAM, core counts, and (includeToolchain, default true) the selected Xcode or Command Line Tools path, Xcode version and Swift version. Cached, so cheap to call; use instead of sw_vers/sysctl/xcode-select/swift --version.",
+            "description": "Read macOS, chip, RAM and core count. Include the selected developer directory and cached toolchain versions when requested.",
             "inputSchema": [
                 "type": "object",
                 "properties": ["includeToolchain": ["type": "boolean", "default": true]],

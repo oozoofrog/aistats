@@ -1,0 +1,197 @@
+[
+  {
+    "prompt": "Give me the current CPU and swap figures, plus network throughput.",
+    "name": "get_system_stats",
+    "arguments": {}
+  },
+  {
+    "prompt": "Show all current machine readings, including battery and disk.",
+    "name": "get_system_stats",
+    "arguments": {}
+  },
+  {
+    "prompt": "Return the current CPU, memory and thermal measurements without a verdict.",
+    "name": "get_system_stats",
+    "arguments": {}
+  },
+  {
+    "prompt": "Which three processes are consuming the most memory right now?",
+    "name": "get_top_processes",
+    "arguments": {
+      "sort": "memory",
+      "limit": 3
+    }
+  },
+  {
+    "prompt": "List the two processes using the most CPU this second.",
+    "name": "get_top_processes",
+    "arguments": {
+      "sort": "cpu",
+      "limit": 2
+    }
+  },
+  {
+    "prompt": "Rank the five biggest physical memory footprints.",
+    "name": "get_top_processes",
+    "arguments": {
+      "sort": "memory",
+      "limit": 5
+    }
+  },
+  {
+    "prompt": "How did CPU use change over the last 15 minutes?",
+    "name": "get_stats_history",
+    "arguments": {
+      "minutes": 15
+    }
+  },
+  {
+    "prompt": "Summarize the past 30 minutes without individual history points.",
+    "name": "get_stats_history",
+    "arguments": {
+      "minutes": 30,
+      "maxPoints": 0
+    }
+  },
+  {
+    "prompt": "Show the trend in free disk space for the last hour with six points.",
+    "name": "get_stats_history",
+    "arguments": {
+      "minutes": 60,
+      "maxPoints": 6
+    }
+  },
+  {
+    "prompt": "Is this machine ready for a heavy build?",
+    "name": "diagnose_system",
+    "arguments": {
+      "purpose": "heavy_work"
+    }
+  },
+  {
+    "prompt": "The Mac feels slow. Tell me the likely cause.",
+    "name": "diagnose_system",
+    "arguments": {
+      "purpose": "slowdown"
+    }
+  },
+  {
+    "prompt": "Assess readiness before running a lengthy test suite.",
+    "name": "diagnose_system",
+    "arguments": {
+      "purpose": "heavy_work"
+    }
+  },
+  {
+    "prompt": "Look up the current process with PID 1234.",
+    "name": "find_processes",
+    "arguments": {
+      "pid": 1234
+    }
+  },
+  {
+    "prompt": "Find running executables named clang.",
+    "name": "find_processes",
+    "arguments": {
+      "name": "clang"
+    }
+  },
+  {
+    "prompt": "Resolve the executable at /usr/bin/make to its live process.",
+    "name": "find_processes",
+    "arguments": {
+      "path": "/usr/bin/make"
+    }
+  },
+  {
+    "prompt": "Start monitoring PID 4321 including its children for 60 seconds.",
+    "name": "track_processes",
+    "arguments": {
+      "action": "start",
+      "pid": 4321,
+      "includeChildren": true,
+      "durationSeconds": 60
+    }
+  },
+  {
+    "prompt": "Get the current monitoring report for track trk-a1.",
+    "name": "track_processes",
+    "arguments": {
+      "action": "status",
+      "trackId": "trk-a1"
+    }
+  },
+  {
+    "prompt": "Stop the monitoring track trk-b2.",
+    "name": "track_processes",
+    "arguments": {
+      "action": "stop",
+      "trackId": "trk-b2"
+    }
+  },
+  {
+    "prompt": "Wait for PID 3322 to exit.",
+    "name": "wait_for",
+    "arguments": {
+      "condition": "process_exit",
+      "pid": 3322
+    }
+  },
+  {
+    "prompt": "Block until memory pressure is normal.",
+    "name": "wait_for",
+    "arguments": {
+      "condition": "memory_pressure_normal"
+    }
+  },
+  {
+    "prompt": "Wait for system CPU to fall below 8 percent.",
+    "name": "wait_for",
+    "arguments": {
+      "condition": "cpu_idle",
+      "belowPercent": 8
+    }
+  },
+  {
+    "prompt": "What are the installed Xcode and Swift versions?",
+    "name": "get_environment",
+    "arguments": {
+      "includeToolchain": true
+    }
+  },
+  {
+    "prompt": "Report the OS and chip without querying the toolchain.",
+    "name": "get_environment",
+    "arguments": {
+      "includeToolchain": false
+    }
+  },
+  {
+    "prompt": "Show the machine architecture and RAM, including toolchain versions.",
+    "name": "get_environment",
+    "arguments": {
+      "includeToolchain": true
+    }
+  },
+  {
+    "prompt": "Show currently connected agent sessions without measuring busy processes.",
+    "name": "get_agent_sessions",
+    "arguments": {
+      "attribute": false
+    }
+  },
+  {
+    "prompt": "List connected agents and their two most recent calls.",
+    "name": "get_agent_sessions",
+    "arguments": {
+      "calls": 2
+    }
+  },
+  {
+    "prompt": "Attribute the three busiest processes to live coding agents.",
+    "name": "get_agent_sessions",
+    "arguments": {
+      "limit": 3
+    }
+  }
+]

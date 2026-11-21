@@ -1,0 +1,158 @@
+[
+  {
+    "name": "get_system_stats",
+    "title": "System stats",
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "get_top_processes",
+    "title": "Top processes",
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "get_stats_history",
+    "title": "Stats history",
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "diagnose_system",
+    "title": "Diagnose system",
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "find_processes",
+    "title": "Find processes",
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "selector": {
+      "argsContain": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "match": {
+        "default": "exact",
+        "enum": [
+          "exact",
+          "glob"
+        ],
+        "type": "string"
+      },
+      "name": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "pid": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "startToken": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "name": "track_processes",
+    "title": "Track processes",
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false
+    },
+    "selector": {
+      "argsContain": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "match": {
+        "default": "exact",
+        "enum": [
+          "exact",
+          "glob"
+        ],
+        "type": "string"
+      },
+      "name": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "pid": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "startToken": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "name": "wait_for",
+    "title": "Wait for",
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "selector": {
+      "argsContain": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "match": {
+        "default": "exact",
+        "enum": [
+          "exact",
+          "glob"
+        ],
+        "type": "string"
+      },
+      "name": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "pid": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "startToken": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "name": "get_environment",
+    "title": "Environment",
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true
+    }
+  }
+]

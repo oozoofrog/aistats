@@ -110,3 +110,20 @@ Estimate, not a measurement: at about 4 bytes per token, the v0.3.0 Tool Listing
 - Whether a 48-byte `argsContain` description in `wait_for` reduces correct use of the argument is not measured. The full rule stays in `find_processes`, and the error messages state the valid combinations.
 - The 8,653-byte Baseline was measured on the binary. The SCH-004 serialization can differ by a few bytes. SCH-005 uses the value from that serialization.
 - Token counts are estimates at about 4 bytes per token. No tokenizer measured them.
+
+## Release check
+
+The 0.3.0 listing measured 8,653 compact UTF-8 bytes. The candidate listing with nine tools measured 6,921 bytes. Three independent runs selected the first tool and its effective arguments for the same 24 prompts on both listings. Both scored 72/72. The candidate also passed nine selections over three new session prompts. The baseline has no session tool. The [prompt fixture](../../scripts/fixtures/tool-selection.json) records the expected answers.
+
+| Shortened clause | Where the client gets the fact |
+| --- | --- |
+| Snapshot interval, top five, alternative verdict | Snapshot description, sampleIntervalSeconds, topProcesses |
+| CPU scale, ranking, current-user scope and targeted lookup | Ranking description, sort and limit, server instructions |
+| History window, recording cadence, sample count, aggregates, absent recorder | History description, minutes, maxPoints, window statistics and recorder hint in the result |
+| Diagnostic thresholds, evidence order and readiness | Diagnostic description, purpose enum, status, readiness and evidence fields |
+| Selector syntax, defaults, identity, unreadable fields, transient bind | Full selector properties in find_processes, its description and matched rows |
+| Duration, tick, capture and spike limits | Track schema ranges and sampleOnSpike property |
+| Instance overlap, root exits, summed usage and single-member peak | Track description, aggregate, restartCount and additionalInstances |
+| Child executable counts, events, threads and trimmed lists | Track description, spawn, events, spikes and omission counts |
+| Scoped waits, target exit, idle readings, deadline, failure state | Wait description, condition, trackId, timeoutSeconds and state/reason |
+| OS build, architecture, Xcode selection and Swift version | Environment description, includeToolchain default and environment fields |
