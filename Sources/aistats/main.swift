@@ -5,6 +5,14 @@ let usage = """
 aistats — lets AI agents (and you) read this Mac's stats
 
 USAGE
+  aistats find (--pid N [--start-token T] | --name NAME | --path PATH | --port N [--probe-free])
+              [--match exact|glob] [--args-contain TEXT] [--limit N] [--json]
+  aistats diagnose [--purpose slowdown|heavy_work] [--json]
+  aistats env [--no-toolchain] [--json]
+  aistats wait CONDITION [--pid N] [--start-token T] [--name NAME | --path PATH] [--match exact|glob]
+              [--args-contain TEXT] [--port N] [--new-instances-only] [--volume-path PATH] [--above-gib N]
+              [--below P] [--timeout S] [--json]
+              cpu_idle | process_exit | process_started | memory_pressure_normal | disk_free_above | port_listening
   aistats preflight [--agent claude-code|codex] [--json]
   aistats stats [--json]                          CPU, memory, disk, network, battery
   aistats top [--sort cpu|memory] [--limit N] [--json]
@@ -86,6 +94,10 @@ func run() throws {
     let all = CommandLine.arguments
     guard all.count > 1 else { print(usage); return }
     let command = all[1]
+    if ["find", "diagnose", "env", "wait"].contains(command) {
+        try diagnosticCommand(command, raw: Array(all.dropFirst(2)))
+        return
+    }
     if command == "preflight" {
         try preflight(Array(all.dropFirst(2)))
         return

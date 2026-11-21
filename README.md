@@ -55,6 +55,10 @@ default.
 ## CLI
 
 ```sh
+aistats find --name Xcode --json
+aistats diagnose --purpose heavy_work
+aistats env --no-toolchain
+aistats wait disk_free_above --above-gib 10
 aistats preflight --json          # fast readiness check before heavy work
 aistats stats                     # one-shot system summary
 aistats top --sort memory --limit 10

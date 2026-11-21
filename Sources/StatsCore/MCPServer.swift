@@ -481,19 +481,8 @@ public final class MCPServer: @unchecked Sendable {
                 return result(id: id, try leanResult(d.summaryLine, d))
 
             case "find_processes":
-                let limit = try Args.int(args, "limit", default: 8, in: 1...ProcessFinder.maxLimit)
-                var r: FindResult
-                if args["port"] != nil {
-                    let port = try Args.port(args)
-                    let probe = try Args.bool(args, "probeFree", default: false)
-                    record(name, "by port")
-                    r = PortLookup.find(port, probeFree: probe, limit: limit)
-                } else {
-                    guard args["probeFree"] == nil else { throw ToolError("probeFree requires port") }
-                    let selector = try Args.selector(args)
-                    record(name, "by \(selector.kind)" + Self.argsNote(selector))
-                    r = ProcessFinder.find(selector, limit: limit, directory: directory)
-                }
+                var r = try Args.find(args, directory: directory)
+                record(name, "by " + r.selector + (args["argsContain"] is String ? " with args filter" : ""))
                 // Long paths can push the rows past the budget: drop the smallest rows until it fits.
                 while r.processes.count > 1, (try fittedSize(id: id, r.summaryLine, r)) > Self.maxResponseBytes {
                     r.processes.removeLast()
@@ -769,7 +758,7 @@ extension Optional {
 }
 
 /// Typed access to tool arguments. Wrong types are errors, not silently defaulted.
-enum Args {
+package enum Args {
     static func string(_ args: [String: Any], _ key: String) -> String? {
         args[key] as? String
     }
@@ -821,6 +810,16 @@ enum Args {
                                          match: optionalString(args, "match"), argsContain: optionalString(args, "argsContain"))
     }
 
+    package static func find(_ args: [String: Any], directory: ProcessDirectory = ProcessDirectory()) throws -> FindResult {
+        let limit = try int(args, "limit", default: 8, in: 1...ProcessFinder.maxLimit)
+        if args["port"] != nil {
+            let port = try port(args)
+            return PortLookup.find(port, probeFree: try bool(args, "probeFree", default: false), limit: limit)
+        }
+        guard args["probeFree"] == nil else { throw ToolError("probeFree requires port") }
+        return ProcessFinder.find(try selector(args), limit: limit, directory: directory)
+    }
+
     static func port(_ args: [String: Any]) throws -> UInt16 {
         guard ["pid", "name", "path"].allSatisfy({ args[$0] == nil }) else {
             throw ToolError("give exactly one of pid, name, path and port")
@@ -834,7 +833,7 @@ enum Args {
         return port
     }
 
-    static func waitTimeout(_ args: [String: Any], condition: WaitCondition) throws -> Double {
+    package static func waitTimeout(_ args: [String: Any], condition: WaitCondition) throws -> Double {
         let timeout = try double(args, "timeoutSeconds", default: 20, in: -Double.greatestFiniteMagnitude...55)
         guard timeout >= condition.minimumTimeout else {
             throw ToolError("\(condition.name) requires at least \(condition.minimumTimeout) seconds")
@@ -842,7 +841,7 @@ enum Args {
         return timeout
     }
 
-    static func waitCondition(_ args: [String: Any]) throws -> WaitCondition {
+    package static func waitCondition(_ args: [String: Any]) throws -> WaitCondition {
         guard let condition = string(args, "condition") else {
             throw ToolError("condition is required: cpu_idle, process_exit or memory_pressure_normal")
         }
