@@ -23,7 +23,8 @@ import Testing
     let tools = MCPServer.tools
     var wire = Data()
     JSONWriter.write(["tools": tools], into: &wire)
-    #expect(wire.count <= 8653)
+    // SCH-005: Baseline plus a per-tool allowance beyond the ten tools of the SDD 0017 release.
+    #expect(wire.count <= 8653 + 600 * max(0, tools.count - 10))
     for tool in tools {
         let description = try #require(tool["description"] as? String)
         #expect(description.utf8.count <= 512)

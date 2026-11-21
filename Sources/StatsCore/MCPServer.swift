@@ -476,8 +476,10 @@ public final class MCPServer: @unchecked Sendable {
             "annotations": ["readOnlyHint": true, "openWorldHint": false]
         ],
         [
-            "name": "get_developer_storage", "description": "Disk free, dev folder sizes, drain rate.",
-            "inputSchema": ["type": "object"],
+            "name": "get_developer_storage", "title": "Developer storage",
+            "description": "Free space per volume, sizes of developer caches the app measured (DerivedData, simulators, package caches), and the disk drain rate.",
+            "inputSchema": ["type": "object", "properties": [String: Any]()],
+            "annotations": ["readOnlyHint": true, "openWorldHint": false]
         ],
         [
             "name": "get_agent_sessions",
