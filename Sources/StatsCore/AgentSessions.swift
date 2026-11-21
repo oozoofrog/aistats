@@ -52,7 +52,9 @@ public struct AgentSessions: Encodable {
             Session(name: p.name, serverStartToken: origin && p.startToken.flatMap(UInt64.init).map { Proc.isAlive(.init(pid: p.pid, start: $0)) } == true ? p.startToken : nil, serverPid: p.pid, client: p.client, connectedAt: p.connectedAt,
                     lastSeen: p.lastSeen, agentPid: p.agentPid, agentStartToken: p.agentStartToken, agentName: p.agentName)
         }
-        let recent = store.recentCalls(limit: calls).reversed().sorted { $0.date > $1.date }.map { ActivityStore.Call(date: $0.date, agent: $0.agent, tool: $0.tool) }
+        let recent = store.recentCalls(limit: ActivityStore.logCapacity).reversed()
+            .sorted { $0.date > $1.date }.prefix(calls)
+            .map { ActivityStore.Call(date: $0.date, agent: $0.agent, tool: $0.tool) }
         var report = AgentSessions(observedAt: Date(), caller: caller, sessions: sessions, recentCalls: recent)
         if let snapshot {
             let origins = OriginSnapshot(processes: snapshot.topProcesses ?? [], entries: Proc.currentUserTable() ?? [], sessions: presences)

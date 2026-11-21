@@ -270,6 +270,16 @@ public final class MCPServer: @unchecked Sendable {
         return out
     }
 
+    static func parentIdentity(parent: () -> Int32 = getppid,
+                               start: (Int32) -> UInt64? = { Proc.usage($0)?.start },
+                               readName: (Int32) -> String? = Proc.name) -> (pid: Int32, token: String, name: String?)? {
+        let pid = parent()
+        guard pid > 1, let token = start(pid), token > 0 else { return nil }
+        let name = readName(pid)
+        guard parent() == pid, start(pid) == token else { return nil }
+        return (pid, String(token), name)
+    }
+
     private func initialize(_ params: [String: Any]) -> [String: Any] {
         let requested = params["protocolVersion"] as? String ?? ""
         let version = Self.supportedVersions.contains(requested) ? requested : Self.supportedVersions[2]
@@ -277,14 +287,7 @@ public final class MCPServer: @unchecked Sendable {
             let cleaned = Self.cleanName(name)
             clientName = cleaned.isEmpty ? nil : cleaned
         }
-        agentIdentity = nil
-        let parent = getppid()
-        if parent > 1, let usage = Proc.usage(parent) {
-            let name = Proc.name(parent)
-            if getppid() == parent, Proc.isAlive(.init(pid: parent, start: usage.start)) {
-                agentIdentity = (parent, String(usage.start), name)
-            }
-        }
+        agentIdentity = Self.parentIdentity()
         agentName = activity.uniqueAgentName(fixedName ?? clientName ?? "agent", pid: pid)
         touchPresence()
         return [
