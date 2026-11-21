@@ -2,6 +2,7 @@
 
 Status · Proposed
 Issue · [#14](https://github.com/oozoofrog/aistats/issues/14)
+Proposed decision · [ADR 0011 · Derive local duration baselines from observed track exits](../adr/0011-duration-baselines.md)
 
 ## Purpose and scope
 
