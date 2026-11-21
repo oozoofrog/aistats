@@ -337,6 +337,9 @@ public final class ActivityStore: @unchecked Sendable {
         public var lastSeen: Date
         /// The session process's start time, so a record isn't kept alive by a reused pid.
         public var startToken: String?
+        public var agentPid: Int32?
+        public var agentStartToken: String?
+        public var agentName: String?
 
         public init(name: String, pid: Int32, client: String?, connectedAt: Date, lastSeen: Date, startToken: String? = nil) {
             self.name = name; self.pid = pid; self.client = client

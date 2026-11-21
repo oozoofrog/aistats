@@ -17,7 +17,7 @@ USAGE
   aistats stats [--json]                          CPU, memory, disk, network, battery
   aistats top [--sort cpu|memory] [--limit N] [--json]
   aistats history [--minutes N] [--json]          trend recorded by the AIStats app (1–60 min)
-  aistats agents                                  connected agents and their recent calls
+  aistats agents [--json] [--calls N] [--no-attribute]  connected agents and their recent calls
   aistats mcp [--name NAME]                       run the MCP server on stdio
   aistats status [AGENT|all] [--json]             is the MCP server registered with each agent
   aistats install AGENT|all [--replace ENTRY]     register this binary's MCP server with an agent
@@ -106,7 +106,7 @@ func run() throws {
         try registration(command, Array(all.dropFirst(2)))
         return
     }
-    let args = try Arguments(all.dropFirst(2), valueOptions: ["sort", "limit", "minutes", "name", "pid", "start-token", "path",
+    let args = try Arguments(all.dropFirst(2), valueOptions: ["sort", "calls", "limit", "minutes", "name", "pid", "start-token", "path",
                                                               "match", "duration", "interval", "spike-cpu", "jsonl", "args-contain"])
 
     switch command {
@@ -140,14 +140,28 @@ func run() throws {
 
     case "agents":
         let activity = ActivityStore()
-        let agents = activity.connectedAgents()
+        let count = try args.int("calls", default: 5, in: 0...20)
+        var report = AgentSessions.collect(store: activity, calls: count, attribute: !args.flags.contains("no-attribute"))
+        if args.flags.contains("json") {
+            let compact = JSONEncoder()
+            compact.dateEncodingStrategy = .iso8601
+            compact.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            try report.fit { try compact.encode($0).count <= MCPServer.maxResponseBytes }
+            try printJSON(report)
+            return
+        }
+        let agents = report.sessions
         print(agents.isEmpty ? "No agents connected." : "Connected:")
-        for a in agents { print("  \(a.name)\tpid \(a.pid)\t\(a.client ?? "")") }
-        let calls = activity.recentCalls(limit: 10)
+        for a in agents { print("  \(a.name)\tpid \(a.serverPid)\t\(a.client ?? "")") }
+        let calls = activity.recentCalls(limit: count)
         if !calls.isEmpty {
             let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
             print("Recent calls:")
             for c in calls { print("  \(f.string(from: c.date))  \(c.agent)  \(c.tool)\(c.detail.map { " (\($0))" } ?? "")") }
+        }
+
+        for row in report.busy ?? [] {
+            print("  \(row.name) pid \(row.pid): " + (row.agentPid.map { "agent pid \($0)" } ?? "unattributed"))
         }
 
     case "mcp":

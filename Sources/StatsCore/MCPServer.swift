@@ -32,6 +32,7 @@ public final class MCPServer: @unchecked Sendable {
     private let pid = ProcessInfo.processInfo.processIdentifier
     private let fixedName: String?
     private var agentName: String
+    private var agentIdentity: (pid: Int32, token: String, name: String?)?
     private var clientName: String?
     private let connectedAt = Date()
 
@@ -275,6 +276,14 @@ public final class MCPServer: @unchecked Sendable {
             let cleaned = Self.cleanName(name)
             clientName = cleaned.isEmpty ? nil : cleaned
         }
+        agentIdentity = nil
+        let parent = getppid()
+        if parent > 1, let usage = Proc.usage(parent) {
+            let name = Proc.name(parent)
+            if getppid() == parent, Proc.isAlive(.init(pid: parent, start: usage.start)) {
+                agentIdentity = (parent, String(usage.start), name)
+            }
+        }
         agentName = activity.uniqueAgentName(fixedName ?? clientName ?? "agent", pid: pid)
         touchPresence()
         return [
@@ -299,9 +308,13 @@ public final class MCPServer: @unchecked Sendable {
     """
 
     private func touchPresence() {
-        activity.updatePresence(.init(name: agentName, pid: pid, client: clientName,
-                                      connectedAt: connectedAt, lastSeen: Date(),
-                                      startToken: Proc.usage(pid).map { String($0.start) }))
+        var presence = ActivityStore.Presence(name: agentName, pid: pid, client: clientName,
+                                              connectedAt: connectedAt, lastSeen: Date(),
+                                              startToken: Proc.usage(pid).map { String($0.start) })
+        presence.agentPid = agentIdentity?.pid
+        presence.agentStartToken = agentIdentity?.token
+        presence.agentName = agentIdentity?.name
+        activity.updatePresence(presence)
     }
 
     // MARK: Tools
@@ -423,6 +436,16 @@ public final class MCPServer: @unchecked Sendable {
             ],
             "annotations": ["readOnlyHint": true, "openWorldHint": false],
         ],
+        [
+            "name": "get_agent_sessions",
+            "description": "List live sessions, recent calls and CPU leaders by nearest agent. Subagents share their parent agent.",
+            "inputSchema": ["type": "object", "properties": [
+                "calls": ["type": "integer", "minimum": 0, "maximum": 20, "default": 5],
+                "attribute": ["type": "boolean", "default": true],
+                "limit": ["type": "integer", "minimum": 1, "maximum": 15, "default": 10]
+            ]],
+            "annotations": ["readOnlyHint": true, "openWorldHint": false]
+        ],
     ]
 
     static let toolNames = Set(tools.compactMap { $0["name"] as? String })
@@ -431,6 +454,20 @@ public final class MCPServer: @unchecked Sendable {
         touchPresence()
         do {
             switch name {
+            case "get_agent_sessions":
+                for key in ["calls", "limit"] where args[key] != nil && !(args[key] is NSNumber) {
+                    throw ToolError("\(key) requires an integer")
+                }
+                if args["attribute"] is NSNull { throw ToolError("attribute requires a boolean") }
+                let calls = try Args.int(args, "calls", default: 5, in: 0...20)
+                let attribute = try Args.bool(args, "attribute", default: true)
+                let limit = try Args.int(args, "limit", default: 10, in: 1...15)
+                record(name)
+                var report = AgentSessions.collect(store: activity, caller: agentName, calls: calls, attribute: attribute, limit: limit)
+                let line = "Agent sessions and recent calls."
+                try report.fit { try fits(toolResult(text: line, json: $0), id: id) }
+                return result(id: id, try toolResult(text: line, json: report))
+
             case "get_system_stats":
                 record(name)
                 var snapshot = sampler.measure(interval: 0.5, includeProcesses: true)

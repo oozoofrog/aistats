@@ -41,7 +41,7 @@ $1" || { echo "FAIL: $2"; echo "$OUT" | cut -c1-600; [ -n "${SMOKE_KEEP:-}" ] &&
 # 1) No app running: history reports that honestly.
 OUT=$(requests | "$CLI" mcp)
 check "assert rs[1]['result']['protocolVersion']=='2025-06-18' and 'diagnose_system' in rs[1]['result']['instructions']" "initialize"
-check "assert [t['name'] for t in rs[2]['result']['tools']]==['get_system_stats','get_top_processes','get_stats_history','diagnose_system','find_processes','track_processes','wait_for','get_environment']" "tools/list"
+check "assert [t['name'] for t in rs[2]['result']['tools']]==['get_system_stats','get_top_processes','get_stats_history','diagnose_system','find_processes','track_processes','wait_for','get_environment','get_agent_sessions']" "tools/list"
 check "s=sc(3); assert s['memory']['totalBytes']>0 and (s['cpu']['usagePercent'] is None if 'cpu' in s.get('unavailable',[]) else 0<=s['cpu']['usagePercent']<=100) and len(s['topProcesses'])<=5" "get_system_stats"
 check "assert len(sc(4)['processes'])==3" "get_top_processes"
 check "r=rs[5]['result']; assert r['structuredContent']['recording'] is False and 'not running' in r['content'][0]['text']" "history without app"
@@ -68,7 +68,7 @@ check "sm=sc(8)['summary']; assert sm['points']==[] and sm['sampleCount']==90" "
 
 # 3) The app's activity log saw the calls.
 check "assert all(o.get('jsonrpc')=='2.0' for o in rs.values())" "every line is JSON-RPC"
-"$CLI" agents | grep -q "smoke-agent  get_stats_history (5m)" && echo "ok - activity log" || { echo "FAIL: activity log"; "$CLI" agents; exit 1; }
+"$CLI" agents --no-attribute --calls 20 | grep -q "smoke-agent  get_stats_history (5m)" && echo "ok - activity log" || { echo "FAIL: activity log"; "$CLI" agents; exit 1; }
 
 # 4) New tools against real processes: an idle sleeper and a child-spawning loop.
 /bin/sleep 120 & SLEEPER=$!; PIDS+=("$SLEEPER")
