@@ -17,8 +17,8 @@ Requires macOS 14 or later. Only the current user's processes are readable (othe
 | `diagnose_system` | The Mac feels slow, or before a build/test/heavy job: returns the likely cause (CPU, load average, memory pressure, thermal throttling, low disk, battery) and the busiest processes |
 | `get_system_stats` | CPU, memory with pressure and swap, disk, network, battery, thermal state. Pass a returned cursor as `since` for changes |
 | `get_top_processes` | Top processes by CPU or memory footprint, with PID, start token and readable parent PID |
-| `find_processes` | Look up processes by TCP listening port, pid, executable name or path (exact or glob, optional `argsContain`); returns a `startToken` that guards against pid reuse |
-| `track_processes` | Watch processes in the background for up to 2 hours: CPU and memory min/avg/max/last, lifetime peak footprint, restarts, child spawns per minute and per executable, CPU spikes with busiest threads and an optional `sample` capture |
+| `find_processes` | Look up processes by TCP listening port, pid, executable name or path (exact or glob, optional `argsContain`); returns a `startToken` that guards against pid reuse. Set `includeBaseline: true` for the duration baseline of each row's job (up to 3) |
+| `track_processes` | Watch processes in the background for up to 2 hours: CPU and memory min/avg/max/last, lifetime peak footprint, restarts, child spawns per minute and per executable, CPU spikes with busiest threads and an optional `sample` capture. Gives `baseline`, the median, p90 and suggested timeout of past runs of the same job, when earlier tracks or `process_exit` waits saw it exit |
 | `wait_for` | Wait (up to 55 s per call) for `cpu_idle`, `process_exit` `memory_pressure_normal`, `process_started`, `disk_free_above` or `port_listening` instead of sleeping; on timeout it says what is still busy |
 | `get_environment` | macOS version, chip, RAM, cores, Xcode and Swift versions |
 | `get_process_tree` | Rank agent subtrees, shared hosts and unattributed processes by CPU, footprint or disk I/O. Use `aistats tree --sort mem` for a terminal tree. |
@@ -55,7 +55,8 @@ shown by `aistats status`). A byte-exact backup of the configuration is written 
 `aistats install --help` lists exactly what is changed.
 
 Data, including those backups, lives in `$AISTATS_HOME`, or `~/Library/Application Support/AIStats` by
-default.
+default. Job duration baselines live in its `durations` folder: each run is stored as a keyed hash of the
+executable path and a fixed build or test subcommand, its duration and exit time, never as command text.
 
 ## CLI
 
@@ -70,6 +71,8 @@ aistats top --sort memory --limit 10
 aistats sims --json               # CPU and memory per booted simulator device
 aistats storage --json            # volume free space, developer folder sizes, drain rate
 aistats track --name Xcode --children --duration 60 --spike-cpu 200
+aistats find --pid 1234 --include-baseline   # past run durations of that process's job
+aistats baselines clear           # delete recorded job durations and replace their signature key
 aistats --help
 ```
 

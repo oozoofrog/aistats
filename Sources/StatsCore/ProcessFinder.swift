@@ -14,6 +14,11 @@ public struct FindResult: Codable, Sendable {
         public var path: String?
         /// Fields that could not be read, e.g. ["footprintBytes", "startToken"]; never reported as 0.
         public var unreadable: [String]?
+        /// With includeBaseline: the index of this row's Baseline in `baselines`.
+        public var baselineIndex: Int?
+        var baseline: Baseline? = nil
+
+        enum CodingKeys: String, CodingKey { case pid, startToken, name, ppid, footprintBytes, path, unreadable, baselineIndex }
     }
 
     public var observedAt: Date
@@ -31,6 +36,39 @@ public struct FindResult: Codable, Sendable {
     public var argsUnreadable: Int?
     /// For a pid owned by another user, or a scan that failed.
     public var note: String?
+    /// With includeBaseline: at most 3 distinct Baselines of the returned rows, in order of their first row.
+    public var baselines: [Baseline]?
+    public var baselinesOmitted: Int?
+
+    /// Looks up the Baseline of each row's job (reading only the Duration Store) and indexes them.
+    mutating func attachBaselines(_ store: DurationStore, reader: CommandReader = .live) {
+        for i in processes.indices {
+            guard let start = processes[i].startToken.flatMap(UInt64.init) else { continue }
+            var command = ObservedCommand()
+            command.observe(Proc.Key(pid: processes[i].pid, start: start), reader: reader)
+            processes[i].baseline = command.identity.flatMap { store.lookup(path: $0.path, subcommand: $0.subcommand) }
+        }
+        baselines = []
+        indexBaselines()
+    }
+
+    /// Recomputes `baselines`, `baselineIndex` and `baselinesOmitted` from the rows kept now.
+    mutating func indexBaselines() {
+        guard baselines != nil else { return }
+        var list: [Baseline] = [], omitted = Set<String>()
+        for i in processes.indices {
+            processes[i].baselineIndex = nil
+            guard let b = processes[i].baseline else { continue }
+            if let j = list.firstIndex(where: { $0.signature == b.signature }) {
+                processes[i].baselineIndex = j
+            } else if list.count < 3 {
+                list.append(b)
+                processes[i].baselineIndex = list.count - 1
+            } else { omitted.insert(b.signature) }
+        }
+        baselines = list
+        baselinesOmitted = omitted.isEmpty ? nil : omitted.count
+    }
 
     public var summaryLine: String {
         let skipped = argsUnreadable.flatMap { $0 > 0 ? "; \($0) skipped, arguments unreadable" : nil } ?? ""

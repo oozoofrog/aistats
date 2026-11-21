@@ -16,7 +16,7 @@ func diagnosticCommand(_ command: String, raw: [String]) throws {
         flags.insert("new-instances-only")
     case "find":
         values = selectors.union(["limit"])
-        flags.insert("probe-free")
+        flags.formUnion(["probe-free", "include-baseline"])
     case "diagnose": values = ["purpose"]
     default: values = []; flags.insert("no-toolchain")
     }
@@ -28,7 +28,7 @@ func diagnosticCommand(_ command: String, raw: [String]) throws {
         throw CLIError("unsupported option --" + bad)
     }
     let names = ["start-token": "startToken", "args-contain": "argsContain", "new-instances-only": "newInstancesOnly",
-                 "probe-free": "probeFree", "volume-path": "volumePath", "above-gib": "aboveGiB",
+                 "probe-free": "probeFree", "include-baseline": "includeBaseline", "volume-path": "volumePath", "above-gib": "aboveGiB",
                  "below": "belowPercent", "timeout": "timeoutSeconds"]
     for (key, value) in args.options {
         let field = names[key] ?? key
@@ -58,6 +58,7 @@ func diagnosticCommand(_ command: String, raw: [String]) throws {
                 if path { fields.append(row.path ?? "?") }
                 print(fields.joined(separator: "\t"))
             }
+            for (i, baseline) in (result.baselines ?? []).enumerated() { print("baseline \(i): \(baseline.summaryLine)") }
         }
         if result.matched == 0 { exit(3) }
     case "diagnose":
@@ -77,7 +78,7 @@ func diagnosticCommand(_ command: String, raw: [String]) throws {
         let condition = try Args.waitCondition(wire)
         let timeout = try Args.waitTimeout(wire, condition: condition)
         signal(SIGINT) { _ in _exit(130) }
-        let report = Waiter(condition: condition, timeout: timeout).run()
+        let report = Waiter(condition: condition, timeout: timeout, durations: .forHome(AIStatsPaths.home)).runToExit()
         if json { try printJSON(report) } else { print(report.summaryLine) }
         if report.state == "timed_out" { exit(3) }
         if report.state == "unavailable" { exit(4) }

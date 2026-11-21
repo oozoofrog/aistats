@@ -132,11 +132,20 @@ public final class Waiter: @unchecked Sendable {
     private var observedMount: String?
     private var processResult: FindResult?
     private var exitKey: Proc.Key?
+    /// process_exit: what the target runs, when it was last seen alive and when its exit was seen (a Run on `met`).
+    private let durations: DurationStore?
+    var commandReader = CommandReader.live
+    private var exitCommand = ObservedCommand()
+    private var exitLastAliveNs: UInt64 = 0
+    private var exitFirstOffset: Int64 = 0
+    private var exitSeenNs: UInt64?
+    static let exitPollSeconds = 0.25
 
-    public init(condition: WaitCondition, timeout: TimeInterval, tracks: TrackManager? = nil) {
+    public init(condition: WaitCondition, timeout: TimeInterval, tracks: TrackManager? = nil, durations: DurationStore? = nil) {
         self.condition = condition
         self.timeout = min(Self.timeoutRange.upperBound, max(Self.timeoutRange.lowerBound, timeout))
         self.tracks = tracks
+        self.durations = durations
     }
 
     /// Calls `completion` once on a background queue, unless `cancel()` comes first. The timeout is a
@@ -161,7 +170,7 @@ public final class Waiter: @unchecked Sendable {
             if let p = tickPeriod { period = .milliseconds(Int(p * 1000)) }
             else if case .processStarted = condition { period = .milliseconds(450) }
             else if case .portListening = condition { period = .milliseconds(450) }
-            else if case .processExit = condition { period = .milliseconds(250) } else { period = .seconds(1) }
+            else if case .processExit = condition { period = .milliseconds(Int(Self.exitPollSeconds * 1000)) } else { period = .seconds(1) }
             let t = DispatchSource.makeTimerSource(queue: queue)
             t.schedule(deadline: .now() + period, repeating: period, leeway: .milliseconds(50))
             t.setEventHandler { [weak self] in self?.tick() }
@@ -191,6 +200,13 @@ public final class Waiter: @unchecked Sendable {
         return result!
     }
 
+    /// `aistats wait`: `run()`, then a `met` wait writes its queued Run before the process exits (DUR-045).
+    public func runToExit() -> WaitResult {
+        let result = run()
+        if result.state == "met" { durations?.drain() }
+        return result
+    }
+
     private func stopTimers() {
         timer?.cancel(); timer = nil
         deadlineTimer?.cancel(); deadlineTimer = nil
@@ -215,7 +231,11 @@ public final class Waiter: @unchecked Sendable {
                                         : "no process with pid \(pid) at the start of the wait"
             }
             if let token, token != String(u.start) { return "pid \(pid) was reused: startToken differs, the original process already exited" }
-            exitKey = Proc.Key(pid: pid, start: u.start)
+            let key = Proc.Key(pid: pid, start: u.start)
+            exitKey = key
+            exitLastAliveNs = Proc.nowNs()
+            exitFirstOffset = DurationClock.offset()
+            exitCommand.observe(key, reader: commandReader)
             return nil
         case .memoryPressureNormal, .processStarted, .diskFree, .portListening:
             return nil
@@ -322,7 +342,14 @@ public final class Waiter: @unchecked Sendable {
             let listening = result.matched > 0
             return Observed(observation: .init(at: Date(), portListening: listening, valid: result.scanAvailable == true), satisfied: listening)
         case .processExit:
+            let before = Proc.nowNs()
             let alive = exitKey.map(Proc.isAlive) ?? false
+            if let key = exitKey {
+                if alive {
+                    exitCommand.observe(key, reader: commandReader)
+                    exitLastAliveNs = before
+                } else if exitSeenNs == nil { exitSeenNs = Proc.nowNs() }
+            }
             return Observed(observation: .init(at: Date(), processAlive: alive, valid: true), satisfied: !alive)
 
         case .memoryPressureNormal:
@@ -457,6 +484,12 @@ public final class Waiter: @unchecked Sendable {
         if state == "met", let processResult {
             result.processes = processResult.processes
             result.matched = processResult.matched
+        }
+        if state == "met", case .processExit = condition, let key = exitKey, let seen = exitSeenNs, let durations,
+           let run = PendingRun.make(command: exitCommand, key: key, startNs: Proc.ns(key.start), exitNs: seen, lastAliveNs: exitLastAliveNs,
+                                     firstOffset: exitFirstOffset, exitOffset: DurationClock.offset(),
+                                     intervalSeconds: Self.exitPollSeconds, exitedAt: Date()) {
+            durations.record(run)
         }
         completion(result)
     }

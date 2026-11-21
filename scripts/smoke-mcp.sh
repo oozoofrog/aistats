@@ -171,7 +171,18 @@ assert sp['method']=='kqueue+polling' and sp['forks']>=10 and sp['unattributedFo
 assert size(50)<=4096, size(50)
 print('    forks', sp['forks'], 'attributed', sp['childrenAttributed'], 'byExecutable', sp['byExecutable'], 'spikes', len(s['spikes']), 'size', size(50))" "track status after the session ended (child spawn counts)"
 
-# 6) CLI track for scripts: summary on stdout, rows in a JSONL file.
+# 6) Exits seen by the tracks and waits above became Runs; a new session reads their Baseline; clear removes them.
+python3 -c "import json,re
+lines=open('$AISTATS_HOME/durations/v1.jsonl').read().splitlines()
+assert lines and all(re.fullmatch(r'\{\"durationSeconds\":[0-9.]+,\"exitResolutionSeconds\":[0-9.]+,\"exitedAt\":\"[0-9TZ:-]{20}\",\"pid\":[0-9]+,\"sig\":\"[0-9a-f]{64}\",\"startToken\":\"[0-9]+\"\}', l) for l in lines), lines
+assert 'sleep' not in open('$AISTATS_HOME/durations/v1.jsonl').read()" && echo "ok - duration runs stored as signed lines" || { echo "FAIL: duration store"; exit 1; }
+OUT=$( (echo "$init"; call 60 find_processes "{\"pid\":$DAEMON,\"includeBaseline\":true}") | "$CLI" mcp)
+check "s=sc(60); assert s['baselines'][0]['label']=='sleep' and s['baselines'][0]['runs']>=1 and s['processes'][0]['baselineIndex']==0, s" "find_processes includeBaseline"
+"$CLI" baselines clear >/dev/null || { echo "FAIL: baselines clear"; exit 1; }
+OUT=$( (echo "$init"; call 61 find_processes "{\"pid\":$DAEMON,\"includeBaseline\":true}") | "$CLI" mcp)
+check "s=sc(61); assert s['baselines']==[] and 'baselineIndex' not in s['processes'][0], s" "baselines clear removes every Run"
+
+# 7) CLI track for scripts: summary on stdout, rows in a JSONL file.
 "$CLI" track --pid "$LOOP" --children --duration 10 --interval 1 --jsonl "$AISTATS_HOME/rows.jsonl" > "$AISTATS_HOME/track.json" 2>/dev/null
 python3 -c "import json
 s=json.load(open('$AISTATS_HOME/track.json')); rows=[json.loads(l) for l in open('$AISTATS_HOME/rows.jsonl')]

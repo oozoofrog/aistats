@@ -134,7 +134,7 @@ Requirements use the ASD-STE100 sentence rules and the Terms below. Each active 
 
 | Section | Fields | Content in a Delta Result |
 | --- | --- | --- |
-| Always fields | `cursor`, `delta`, `unchanged`, `trackId`, `state`, `endReason`, `endedAt`, `elapsedSeconds`, `validSamples`, `aggregate`, `restartCount`, `additionalInstances`, `membersDropped`, `spikesRateLimited`, `argsUnreadable` | Always present when the report has them |
+| Always fields | `cursor`, `delta`, `unchanged`, `trackId`, `state`, `endReason`, `endedAt`, `elapsedSeconds`, `validSamples`, `aggregate`, `restartCount`, `additionalInstances`, `membersDropped`, `spikesRateLimited`, `argsUnreadable`, `baseline` | Always present when the report has them. `baseline` never collapses ([SDD 0015](0015-job-duration-baselines.md) DUR-023). |
 | `config` | `selector`, `match`, `includeChildren`, `scope`, `startedAt`, `endsAt`, `durationSeconds`, `intervalSeconds`, `argsFilter` | The whole Section when changed |
 | `instances` | `instances`, `instancesOmitted` | The whole Section when changed |
 | `members` | `members`, `membersOmitted` | The whole Section when changed |

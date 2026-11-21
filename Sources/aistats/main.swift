@@ -6,7 +6,7 @@ aistats — lets AI agents (and you) read this Mac's stats
 
 USAGE
   aistats find (--pid N [--start-token T] | --name NAME | --path PATH | --port N [--probe-free])
-              [--match exact|glob] [--args-contain TEXT] [--limit N] [--json]
+              [--match exact|glob] [--args-contain TEXT] [--limit N] [--include-baseline] [--json]
   aistats diagnose [--purpose slowdown|heavy_work] [--json]
   aistats env [--no-toolchain] [--json]
   aistats wait CONDITION [--pid N] [--start-token T] [--name NAME | --path PATH] [--match exact|glob]
@@ -31,6 +31,7 @@ USAGE
   aistats track (--pid N [--start-token T] | --name NAME | --path PATH) [--match exact|glob]
                 [--args-contain TEXT] [--children] [--duration S] [--interval S] [--spike-cpu P] [--sample-on-spike]
                 [--jsonl FILE]                    track processes in the foreground, print the summary
+  aistats baselines clear                         delete recorded job durations and replace their signature key
   aistats setup                                   print commands that register the MCP server by hand
 
 AGENT is one of: claude-code, codex, gemini, claude-desktop, cursor.
@@ -103,6 +104,12 @@ func run() throws {
     }
     if command == "preflight" {
         try preflight(Array(all.dropFirst(2)))
+        return
+    }
+    if command == "baselines" {
+        guard all.dropFirst(2) == ["clear"] else { throw CLIError("usage: aistats baselines clear") }
+        try DurationStore.clear(home: AIStatsPaths.home)
+        print("Deleted recorded job durations and replaced the signature key.")
         return
     }
     if ["install", "uninstall", "status"].contains(command) {
@@ -432,8 +439,7 @@ func track(_ args: Arguments) throws {
     if report.state != "running" { final = manager.status(report.trackId) } else { done.wait() }
     // Reap `sample` captures (they are cancelled with the track) before exiting, then print the summary
     // as saved after they finished.
-    manager.stopAll(reason: "stopped_by_caller", captureWait: 5)
-    if let saved = manager.status(report.trackId) { final = saved }
+    if let saved = manager.finalReport(report.trackId) { final = saved }
     sources.forEach { $0.cancel() }
     try? jsonl?.close()
     if let final { try printJSON(final) }

@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory() as folder:
     names = {"startToken": "start-token", "argsContain": "args-contain", "probeFree": "probe-free",
              "purpose": "purpose", "includeToolchain": "no-toolchain", "timeoutSeconds": "timeout",
              "belowPercent": "below", "newInstancesOnly": "new-instances-only", "volumePath": "volume-path",
-             "aboveGiB": "above-gib"}
+             "aboveGiB": "above-gib", "includeBaseline": "include-baseline"}
     help_text = run("help").stdout
     with subprocess.Popen([sys.argv[1], "mcp"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as server:
         for identifier, method, params in [(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
@@ -54,4 +54,51 @@ with tempfile.TemporaryDirectory() as folder:
     time.sleep(0.25)
     wait.send_signal(signal.SIGINT)
     assert wait.communicate(timeout=2)[0] == b"" and wait.returncode == 130
-    print("CLI positive, negative, unknown, error and interrupt outcomes passed")
+
+    # DUR-045, DUR-039: each recorder writes its Run before it exits, and the final track report has the label.
+    def detached_sleep(seconds):
+        """A sleep that launchd reaps, so its exit is not hidden behind a zombie of this script."""
+        shell = subprocess.run(["/bin/sh", "-c", f"/bin/sleep {seconds} >/dev/null 2>&1 & echo $!"], capture_output=True, text=True)
+        return int(shell.stdout)
+
+    def alive(pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+
+    def stored_runs():
+        try:
+            with open(os.path.join(folder, "durations", "v1.jsonl")) as runs:
+                return len(runs.read().splitlines())
+        except FileNotFoundError:
+            return 0
+
+    assert run("wait", "process_exit", "--pid", str(detached_sleep(1)), "--timeout", "4").returncode == 0
+    assert stored_runs() == 1, "wait process_exit after met"
+    job = detached_sleep(2)
+    track = subprocess.Popen([sys.argv[1], "track", "--pid", str(job), "--duration", "30", "--interval", "1"], env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    while alive(job):
+        time.sleep(0.05)
+    track.send_signal(signal.SIGINT)
+    final = json.loads(track.communicate(timeout=10)[0])
+    assert stored_runs() == 2, "track after SIGINT"
+    assert final["baseline"]["label"] == "sleep" and final["baseline"]["runs"] == 2, final.get("baseline")
+    job = detached_sleep(1)
+    with subprocess.Popen([sys.argv[1], "mcp"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as server:
+        for identifier, method, params in [(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                                               "clientInfo": {"name": "cli-check", "version": "1"}}),
+                                           (2, "tools/call", {"name": "track_processes", "arguments":
+                                                              {"action": "start", "pid": job, "durationSeconds": 30, "intervalSeconds": 1}})]:
+            server.stdin.write(json.dumps(dict(jsonrpc="2.0", id=identifier, method=method, params=params)) + "\n")
+            server.stdin.flush()
+            server.stdout.readline()
+        while alive(job):
+            time.sleep(0.05)
+        time.sleep(1.5)
+        server.send_signal(signal.SIGTERM)
+        server.wait(timeout=10)
+    assert stored_runs() == 3, "Server after SIGTERM"
+    print("CLI positive, negative, unknown, error, interrupt and duration drain outcomes passed")

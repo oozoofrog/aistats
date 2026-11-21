@@ -196,6 +196,8 @@ public struct TrackReport: Codable, Sendable {
     public var argsFilter: Bool?
     /// With argsContain: processes that matched by name/path but whose arguments couldn't be read.
     public var argsUnreadable: Int?
+    /// Past Run durations of the newest Root Instance's job (SDD 0015). Kept by trimming, never stored with the report.
+    public var baseline: Baseline?
 
     public var summaryLine: String {
         var parts = ["track \(trackId) \(state)\(endReason.map { " (\(Self.clip($0, 80)))" } ?? "") \(Int(elapsedSeconds))s/\(durationSeconds)s"]
@@ -528,6 +530,9 @@ final class ProcessTrack {
         /// Uptime ns of the start and of the moment the exit was seen (an upper bound of the real exit).
         var startNs: UInt64
         var exitedNs: UInt64?
+        var command = ObservedCommand()
+        var lastAliveNs: UInt64
+        var firstOffset: Int64
     }
 
     static let discoveryInterval: UInt64 = 5_000_000_000
@@ -544,6 +549,7 @@ final class ProcessTrack {
 
     /// Name/path rescans happen at most this often (tests shorten it).
     var discoveryInterval = ProcessTrack.discoveryInterval
+    var persistInterval = ProcessTrack.persistInterval
     var spikeCaptureInterval = ProcessTrack.spikeCaptureInterval
     var maxMembers = ProcessTrack.maxMembers
 
@@ -558,6 +564,8 @@ final class ProcessTrack {
     let sampleExecutable: String
     var onTick: ((TrackTickRow) -> Void)?
     var onFinish: ((TrackReport) -> Void)?
+    var durations: DurationStore?
+    var commandReader = CommandReader.live
 
     private(set) var state = "running"
     private(set) var endReason: String?
@@ -716,6 +724,7 @@ final class ProcessTrack {
             let t = Proc.nowNs()
             anyRead = true
             refreshIdentity(m)
+            if m.isRoot { observeRoot(m.key, name: m.name, at: t) }
             var cpu: Double?
             if let pc = m.prevCpuNs, let pn = m.prevNs, t > pn, u.cpuNs >= pc {
                 cpu = Double(u.cpuNs - pc) / Double(t - pn) * 100
@@ -760,7 +769,7 @@ final class ProcessTrack {
             finish(state: "ended", reason: "duration_elapsed")
             return
         }
-        if now &- lastPersistNs >= Self.persistInterval {
+        if now &- lastPersistNs >= persistInterval {
             lastPersistNs = now
             persist(report())
         }
@@ -788,6 +797,29 @@ final class ProcessTrack {
         if options.selector.isPath {
             let path = Proc.path(m.key.pid)
             m.path = path.flatMap { options.selector.matches(name: newName, path: $0) ? $0 : nil }
+        }
+        if m.isRoot { observeRoot(m.key, name: newName, at: Proc.nowNs()) }
+    }
+
+    /// A live Root Instance was read at `ns`: refresh its command and its last alive observation.
+    private func observeRoot(_ key: Proc.Key, name: String, at ns: UInt64) {
+        guard var r = roots[key], r.exitedAt == nil else { return }
+        r.command.observe(key, name: name, reader: commandReader)
+        r.lastAliveNs = max(r.lastAliveNs, ns)
+        roots[key] = r
+    }
+
+    /// The first time an exit of a Root Instance is seen: records its Run before any table removal.
+    private func rootExited(_ key: Proc.Key, at date: Date) {
+        guard var r = roots[key], r.exitedAt == nil else { return }
+        let now = Proc.nowNs()
+        r.exitedAt = date
+        r.exitedNs = now
+        roots[key] = r
+        if let durations, let run = PendingRun.make(command: r.command, key: key, startNs: r.startNs, exitNs: now, lastAliveNs: r.lastAliveNs,
+                                                    firstOffset: r.firstOffset, exitOffset: DurationClock.offset(),
+                                                    intervalSeconds: options.intervalSeconds, exitedAt: date) {
+            durations.record(run)
         }
     }
 
@@ -819,7 +851,7 @@ final class ProcessTrack {
         let parentOf = Dictionary(rows.map { ($0.pid, $0.ppid) }, uniquingKeysWith: { a, _ in a })
         // Ancestry only counts live, verified instances (a stale root must not adopt a reused pid).
         for (key, r) in roots where r.exitedAt == nil && !Proc.isAlive(key) {
-            if let m = members[key] { memberExited(m, at: Date()) } else { roots[key]?.exitedAt = Date(); roots[key]?.exitedNs = Proc.nowNs() }
+            if let m = members[key] { memberExited(m, at: Date()) } else { rootExited(key, at: Date()) }
         }
         var livePids = Set(members.values.filter { $0.exitedAt == nil }.map(\.key.pid))
         let rootPids = Set(roots.filter { $0.value.exitedAt == nil }.map(\.key.pid))
@@ -879,7 +911,10 @@ final class ProcessTrack {
             kind = "restart"
         }
         rootsSeen += 1
-        roots[key] = Root(startedAt: started, exitedAt: nil, order: rootsSeen, startNs: usage.startNs, exitedNs: nil)
+        var root = Root(startedAt: started, exitedAt: nil, order: rootsSeen, startNs: usage.startNs, exitedNs: nil,
+                        lastAliveNs: Proc.nowNs(), firstOffset: DurationClock.offset())
+        root.command.observe(key, name: name, reader: commandReader)
+        roots[key] = root
         if roots.count > Self.maxRoots,
            let oldest = roots.filter({ $0.value.exitedAt != nil }).min(by: { $0.value.order < $1.value.order }) {
             roots[oldest.key] = nil
@@ -923,10 +958,8 @@ final class ProcessTrack {
     private func memberExited(_ m: Member, at date: Date) {
         guard m.exitedAt == nil else { return }
         m.exitedAt = date
-        if m.isRoot, var r = roots[m.key] {
-            r.exitedAt = date
-            r.exitedNs = Proc.nowNs()
-            roots[m.key] = r
+        if m.isRoot, roots[m.key] != nil {
+            rootExited(m.key, at: date)
             addEvent("exit", pid: m.key.pid, name: m.name)
         } else if !m.isRoot {
             addEvent("child_exit", pid: m.key.pid, name: m.name)
@@ -1158,6 +1191,13 @@ final class ProcessTrack {
             argsUnreadable: options.selector.argsContain != nil ? argsUnreadable.count : nil)
     }
 
+    /// The held path and Subcommand of the newest Root Instance that has a Command Signature. Its Baseline is looked up
+    /// off the tracker queue, because a lookup can wait for the shared lock or rebuild the index (DUR-015).
+    func baselineIdentity() -> (path: String, subcommand: String)? {
+        guard durations != nil else { return nil }
+        return roots.values.filter({ $0.command.identity != nil }).max(by: { $0.order < $1.order })?.command.identity
+    }
+
     private func nonZero(_ n: Int) -> Int? { n > 0 ? n : nil }
 
     func persist(_ report: TrackReport) {
@@ -1241,8 +1281,11 @@ public final class TrackManager: @unchecked Sendable {
     public var sampleExecutable = "/usr/bin/sample"
     /// How often name/path tracks rescan the process list.
     var discoveryInterval: UInt64 = ProcessTrack.discoveryInterval
+    var persistInterval: UInt64 = ProcessTrack.persistInterval
     var spikeCaptureInterval: UInt64 = ProcessTrack.spikeCaptureInterval
     var maxMembers = ProcessTrack.maxMembers
+    var commandReader = CommandReader.live
+    public let durations: DurationStore
     /// userInitiated, not utility: on a saturated Mac (exactly when tracking matters) utility work was
     /// starved for seconds, leaving gaps in the samples. Each tick is a few syscalls.
     let queue = DispatchQueue(label: "aistats.tracker", qos: .userInitiated)
@@ -1252,6 +1295,7 @@ public final class TrackManager: @unchecked Sendable {
 
     public init(home: URL = AIStatsPaths.home) {
         self.home = home
+        durations = DurationStore.forHome(home)
     }
 
     /// Running tracks end (saved as stopped) when their manager goes away; their kqueue threads, timers
@@ -1276,7 +1320,7 @@ public final class TrackManager: @unchecked Sendable {
 
     public func start(_ options: TrackOptions, onTick: ((TrackTickRow) -> Void)? = nil,
                       onFinish: ((TrackReport) -> Void)? = nil) throws -> TrackReport {
-        try queue.sync {
+        let started = try queue.sync { () throws -> (TrackReport, (path: String, subcommand: String)?) in
             guard tracks.values.filter(\.isRunning).count < Self.maxActive else { throw TrackError.tooManyActive }
             var rootUsage: Proc.Usage?
             if case .pid(let pid, let token) = options.selector {
@@ -1299,14 +1343,25 @@ public final class TrackManager: @unchecked Sendable {
                 onFinish?(r)
             }
             track.discoveryInterval = discoveryInterval
+            track.persistInterval = persistInterval
             track.spikeCaptureInterval = spikeCaptureInterval
             track.maxMembers = maxMembers
+            track.durations = durations
+            track.commandReader = commandReader
             tracks[id] = track
             track.begin(rootUsage: rootUsage)
             let report = track.report()
             if track.isRunning { track.persist(report) }
-            return report
+            return (report, track.baselineIdentity())
         }
+        return withBaseline(started)
+    }
+
+    /// Adds the Baseline outside `queue`, so a lookup never delays a track tick (DUR-015).
+    private func withBaseline(_ held: (report: TrackReport, identity: (path: String, subcommand: String)?)) -> TrackReport {
+        var report = held.report
+        if let id = held.identity { report.baseline = durations.lookup(path: id.path, subcommand: id.subcommand) }
+        return report
     }
 
     /// On `queue`: remembers finish order and drops the oldest finished tracks from memory.
@@ -1320,19 +1375,19 @@ public final class TrackManager: @unchecked Sendable {
 
     /// In-session tracks first; otherwise the summary saved by whichever session ran it.
     public func status(_ id: String) -> TrackReport? {
-        if let r = queue.sync(execute: { tracks[id]?.report() }) { return r }
+        if let held = queue.sync(execute: { tracks[id].map { ($0.report(), $0.baselineIdentity()) } }) { return withBaseline(held) }
         return Self.load(id, home: home)
     }
 
     /// Stops a track of this session. Throws for a track that exists only on disk (another session's,
     /// or one this session no longer holds), so the caller isn't told a stop happened when it didn't.
     public func stop(_ id: String) throws -> TrackReport {
-        if let r = queue.sync(execute: { () -> TrackReport? in
+        if let held = queue.sync(execute: { () -> (TrackReport, (path: String, subcommand: String)?)? in
             guard let t = tracks[id] else { return nil }
             t.finish(state: "stopped", reason: "stopped_by_caller")
-            return t.report()
+            return (t.report(), t.baselineIdentity())
         }) {
-            return r
+            return withBaseline(held)
         }
         if let stored = Self.load(id, home: home) { throw TrackError.notInSession(id: id, state: stored.state) }
         throw TrackError.notFound(id)
@@ -1352,6 +1407,14 @@ public final class TrackManager: @unchecked Sendable {
         let end = DispatchTime.now() + captureWait
         for g in groups { _ = g.wait(timeout: end) }
         queue.sync {}
+    }
+
+    /// `aistats track` after its track ended: stops what still runs, writes the queued Runs (DUR-045), and returns the
+    /// final report with its Baseline (DUR-039).
+    public func finalReport(_ id: String, captureWait: TimeInterval = 5) -> TrackReport? {
+        stopAll(reason: "stopped_by_caller", captureWait: captureWait)
+        durations.drain()
+        return status(id)
     }
 
     public var activeCount: Int { queue.sync { tracks.values.filter(\.isRunning).count } }

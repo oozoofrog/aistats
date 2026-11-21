@@ -124,6 +124,7 @@ public final class MCPServer: @unchecked Sendable {
         tokens.forEach { $0.cancel() }
         work.sync {}
         tracks.stopAll(reason: "session_ended")
+        tracks.durations.drain()
         activity.removePresence(name: agentName, pid: pid)
         out.sync {}
     }
@@ -401,7 +402,8 @@ public final class MCPServer: @unchecked Sendable {
             "description": "Find by one PID, name, path or listening TCP port. A missing listener does not mean a free port. probeFree can briefly prevent another bind. Results identify instances and unreadable fields.",
             "inputSchema": [
                 "type": "object",
-                "properties": selectorProperties.merging(["port": portProperty, "probeFree": ["type": "boolean", "default": false], "limit": ["type": "integer", "minimum": 1, "maximum": 15, "default": 8]]) { a, _ in a },
+                "properties": selectorProperties.merging(["port": portProperty, "probeFree": ["type": "boolean", "default": false], "limit": ["type": "integer", "minimum": 1, "maximum": 15, "default": 8],
+                                                          "includeBaseline": ["type": "boolean", "default": false, "description": "Add past run durations of each row's job."]]) { a, _ in a },
             ],
             "annotations": ["readOnlyHint": true, "openWorldHint": false],
         ],
@@ -589,7 +591,7 @@ public final class MCPServer: @unchecked Sendable {
                 return result(id: id, try leanResult(d.summaryLine, d))
 
             case "find_processes":
-                let r = try Args.find(args, directory: directory)
+                let r = try Args.find(args, directory: directory, durations: tracks.durations)
                 record(name, "by " + r.selector + (args["argsContain"] is String ? " with args filter" : ""))
                 return try findResponse(r, id: id)
 
@@ -670,6 +672,7 @@ public final class MCPServer: @unchecked Sendable {
             r.processes.removeLast()
             r.processesOmitted = (r.processesOmitted ?? 0) + 1
             r.truncated = true
+            r.indexBaselines()
         }
         if r.processes.count == 1, try fittedSize(id: id, r.summaryLine, r) > Self.maxResponseBytes {
             r.processes[0].path = r.processes[0].path.map { TrackReport.clip($0, 80, keepTail: true) }
@@ -759,7 +762,7 @@ public final class MCPServer: @unchecked Sendable {
             work.async { [self] in finish(result(id: id, errorToolResult(message))) }
             return
         }
-        let waiter = Waiter(condition: condition, timeout: timeout, tracks: tracks)
+        let waiter = Waiter(condition: condition, timeout: timeout, tracks: tracks, durations: tracks.durations)
         pendingLock.lock()
         entry.waiter = waiter
         let cancelledAlready = entry.cancelled
@@ -1001,14 +1004,20 @@ package enum Args {
                                          match: optionalString(args, "match"), argsContain: optionalString(args, "argsContain"))
     }
 
-    package static func find(_ args: [String: Any], directory: ProcessDirectory = ProcessDirectory()) throws -> FindResult {
+    package static func find(_ args: [String: Any], directory: ProcessDirectory = ProcessDirectory(),
+                             durations: DurationStore? = nil) throws -> FindResult {
         let limit = try int(args, "limit", default: 8, in: 1...ProcessFinder.maxLimit)
+        let includeBaseline = try bool(args, "includeBaseline", default: false)
+        var result: FindResult
         if args["port"] != nil {
             let port = try port(args)
-            return PortLookup.find(port, probeFree: try bool(args, "probeFree", default: false), limit: limit)
+            result = PortLookup.find(port, probeFree: try bool(args, "probeFree", default: false), limit: limit)
+        } else {
+            guard args["probeFree"] == nil else { throw ToolError("probeFree requires port") }
+            result = ProcessFinder.find(try selector(args), limit: limit, directory: directory)
         }
-        guard args["probeFree"] == nil else { throw ToolError("probeFree requires port") }
-        return ProcessFinder.find(try selector(args), limit: limit, directory: directory)
+        if includeBaseline { result.attachBaselines(durations ?? .forHome(AIStatsPaths.home)) }
+        return result
     }
 
     static func port(_ args: [String: Any]) throws -> UInt16 {
