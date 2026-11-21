@@ -8,7 +8,7 @@ enum TrackDelta {
     private static let sections = [
         ("config", ["selector", "match", "includeChildren", "scope", "startedAt", "endsAt", "durationSeconds", "intervalSeconds", "argsFilter"]),
         ("instances", ["instances", "instancesOmitted"]), ("members", ["members", "membersOmitted"]),
-        ("spawn", ["spawn"]), ("notes", ["notes"])
+        ("spawn", ["spawn"]), ("notes", ["notes", "notesOmitted"])
     ]
 
     private struct Base: Codable {
@@ -77,7 +77,7 @@ enum TrackDelta {
                 let fields = out.filter { keys.contains($0.key) }
                 let hash = try digest(fields)
                 next.sections[section] = hash
-                if let base, base.sections[section] != hash, fields.isEmpty, keys.count == 1 { out[keys[0]] = NSNull() }
+                if let base, base.sections[section] != hash, fields.isEmpty, (section == "notes" || section == "spawn") { out[keys[0]] = NSNull() }
                 if base?.sections[section] == hash {
                     unchanged.append(section)
                     for key in keys { out.removeValue(forKey: key) }

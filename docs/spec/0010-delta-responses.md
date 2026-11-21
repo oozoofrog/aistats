@@ -141,7 +141,7 @@ Requirements use the ASD-STE100 sentence rules and the Terms below. Each active 
 | `events` | `events`, `eventsOmitted` | Only events added after the Base |
 | `spikes` | `spikes`, `spikesOmitted` | Spikes added after the Base, and spikes whose sample result arrived after the Base |
 | `spawn` | `spawn` | The whole Section when changed |
-| `notes` | `notes` | The whole Section when changed |
+| `notes` | `notes`, `notesOmitted` | The whole Section when changed |
 
 ### Size
 

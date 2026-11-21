@@ -191,6 +191,7 @@ public struct TrackReport: Codable, Sendable {
     public var spikesRateLimited: Int?
     public var spawn: Spawn?
     public var notes: [String]?
+    public var notesOmitted: Int?
     /// True when the selector had an argument filter (the filter itself is never stored or returned).
     public var argsFilter: Bool?
     /// With argsContain: processes that matched by name/path but whose arguments couldn't be read.
@@ -301,7 +302,10 @@ extension TrackReport {
             { trimSpikes(&$0, threads: 0, frames: 0, frameChars: 0); clipStrings(&$0, 24) },
             { r in
                 keepEvents(&r, 0); keepMembers(&r, 0); keepInstances(&r, 0); keepSpikes(&r, 0); keepExecutables(&r, 0)
-                if let n = r.notes, n.count > 1 { r.notes = Array(n.prefix(1)) }
+                if let notes = r.notes, notes.count > 1 {
+                    r.notesOmitted = add(notes.count - 1, to: r.notesOmitted)
+                    r.notes = Array(notes.prefix(1))
+                }
             },
         ]
         var r = self

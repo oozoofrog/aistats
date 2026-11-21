@@ -293,7 +293,9 @@ private func structured(_ r: [String: Any]?) -> [String: Any]? {
         }
         r.events = (0..<8).map { _ in .init(t: Date(), kind: "exec", pid: child.pid, name: String(repeating: "e", count: 200), detail: String(repeating: "d", count: 200)) }
         r.eventsOmitted = 40
-        r.notes = [String(repeating: "note ", count: 100)]
+        r.notes = Array(repeating: String(repeating: "note ", count: 100), count: 12)
+        let minimal = r.fitting(maxBytes: 1)
+        #expect((minimal.notes?.count ?? 0) + (minimal.notesOmitted ?? 0) == 12)
         TrackManager.save(r, home: home)
 
         let h = MCPHarness(home: home)

@@ -522,17 +522,7 @@ public final class MCPServer: @unchecked Sendable {
                 record(name)
                 var snapshot = sampler.measure(interval: 0.5, includeProcesses: true)
                 snapshot.topProcesses = sampler.topProcesses(sortedBy: .cpu, limit: 5, from: snapshot.topProcesses ?? [])
-                let raw = try snapshot.structuredData(using: Self.encoder)
-                let fields = try JSONSerialization.jsonObject(with: raw) as! [String: Any]
-                func body(_ object: [String: Any]) throws -> [String: Any] {
-                    let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
-                    let unchanged = object["unchanged"] as? [String]
-                    let summary = unchanged.map { "Unchanged: " + $0.joined(separator: ", ") } ?? snapshot.summary
-                    return toolResult(text: summary, data: data)
-                }
-                let projected = try snapshotDelta.response(fields, since: Args.optionalString(args, "since"),
-                                                            now: ProcessInfo.processInfo.systemUptime) { try fits(body($0), id: id) }
-                return result(id: id, try body(projected))
+                return try snapshotResponse(snapshot, since: Args.optionalString(args, "since"), id: id)
 
             case "get_top_processes":
                 let sort = try ProcessSort(rawValue: Args.string(args, "sort") ?? "cpu").orThrow("sort must be cpu or memory")
@@ -540,14 +530,7 @@ public final class MCPServer: @unchecked Sendable {
                 record(name, "\(sort.rawValue) \(limit)")
                 let snapshot = sampler.measure(interval: 1.0, includeProcesses: true)
                 let top = sampler.topProcesses(sortedBy: sort, limit: limit, from: snapshot.topProcesses ?? [])
-                var list = ProcessList(sort: sort.rawValue, processes: top)
-                while true {
-                    let summary = ProcessTable.text(list.processes)
-                    let body = try toolResult(text: summary, json: list)
-                    if fits(body, id: id) || list.processes.isEmpty { return result(id: id, body) }
-                    list.processes.removeLast()
-                    list.processesOmitted = top.count - list.processes.count
-                }
+                return try topResponse(top, sort: sort, id: id)
 
             case "get_stats_history":
                 let minutes = try Args.int(args, "minutes", default: 10, in: 1...60)
@@ -578,19 +561,9 @@ public final class MCPServer: @unchecked Sendable {
                 return result(id: id, try leanResult(d.summaryLine, d))
 
             case "find_processes":
-                var r = try Args.find(args, directory: directory)
+                let r = try Args.find(args, directory: directory)
                 record(name, "by " + r.selector + (args["argsContain"] is String ? " with args filter" : ""))
-                // Long paths can push the rows past the budget: drop the smallest rows until it fits.
-                while r.processes.count > 1, (try fittedSize(id: id, r.summaryLine, r)) > Self.maxResponseBytes {
-                    r.processes.removeLast()
-                    r.processesOmitted = (r.processesOmitted ?? 0) + 1
-                    r.truncated = true
-                }
-                if r.processes.count == 1, try fittedSize(id: id, r.summaryLine, r) > Self.maxResponseBytes {
-                    r.processes[0].path = r.processes[0].path.map { TrackReport.clip($0, 80, keepTail: true) }
-                    r.processes[0].name = r.processes[0].name.map { TrackReport.clip($0, 48) }
-                }
-                return result(id: id, try leanResult(r.summaryLine, r))
+                return try findResponse(r, id: id)
 
             case "track_processes":
                 return try trackTool(args, id: id)
@@ -614,6 +587,46 @@ public final class MCPServer: @unchecked Sendable {
         } catch {
             return result(id: id, errorToolResult("\(error)"))
         }
+    }
+
+    func snapshotResponse(_ snapshot: Snapshot, since: String?, id: Any) throws -> [String: Any] {
+        let raw = try snapshot.structuredData(using: Self.encoder)
+        let fields = try JSONSerialization.jsonObject(with: raw) as! [String: Any]
+        func body(_ object: [String: Any]) throws -> [String: Any] {
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+            let unchanged = object["unchanged"] as? [String]
+            let summary = unchanged.map { "Unchanged: " + $0.joined(separator: ", ") } ?? snapshot.summary
+            return toolResult(text: summary, data: data)
+        }
+        let projected = try snapshotDelta.response(fields, since: since,
+                                                    now: ProcessInfo.processInfo.systemUptime) { try fits(body($0), id: id) }
+        return result(id: id, try body(projected))
+    }
+
+    func topResponse(_ top: [ProcessUsage], sort: ProcessSort, id: Any) throws -> [String: Any] {
+        var list = ProcessList(sort: sort.rawValue, processes: top)
+        while true {
+            let summary = ProcessTable.text(list.processes)
+            let body = try toolResult(text: summary, json: list)
+            if fits(body, id: id) || list.processes.isEmpty { return result(id: id, body) }
+            list.processes.removeLast()
+            list.processesOmitted = top.count - list.processes.count
+        }
+    }
+
+    func findResponse(_ found: FindResult, id: Any) throws -> [String: Any] {
+        var r = found
+        // Long paths can push the rows past the budget: drop the smallest rows until it fits.
+        while r.processes.count > 1, (try fittedSize(id: id, r.summaryLine, r)) > Self.maxResponseBytes {
+            r.processes.removeLast()
+            r.processesOmitted = (r.processesOmitted ?? 0) + 1
+            r.truncated = true
+        }
+        if r.processes.count == 1, try fittedSize(id: id, r.summaryLine, r) > Self.maxResponseBytes {
+            r.processes[0].path = r.processes[0].path.map { TrackReport.clip($0, 80, keepTail: true) }
+            r.processes[0].name = r.processes[0].name.map { TrackReport.clip($0, 48) }
+        }
+        return result(id: id, try leanResult(r.summaryLine, r))
     }
 
     private func trackTool(_ args: [String: Any], id: Any) throws -> [String: Any] {
@@ -761,7 +774,7 @@ public final class MCPServer: @unchecked Sendable {
                 "isError": false, "structuredContent": RawJSON(data: data)]
     }
 
-    private func leanResult<T: Encodable>(_ line: String, _ json: T) throws -> [String: Any] {
+    func leanResult<T: Encodable>(_ line: String, _ json: T) throws -> [String: Any] {
         try toolResult(text: line, json: json)
     }
 

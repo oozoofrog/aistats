@@ -127,6 +127,8 @@ The 9,216-byte Line Size limit is two Payload Budgets, one Summary, and 512 byte
 | --- | --- | --- |
 | RSZ-024 | The server SHOULD state the Payload Budget and the Omitted count rule once, not in each tool description. | Count occurrences of the budget statement in `initialize` and `tools/list`. Expect one. |
 
+For RSZ-009 a retained track detail has its own nested lists. Apply the established track priority to each detail. Reduce sample frames and threads before shortening the retained frame text. Keep a representative event, member and spike when shorter strings fit. Count any notes removed from the final report in notesOmitted. This preserves the existing diagnostic detail priority when the whole-line limit applies.
+
 ### Table 3 · Worst-case Fixture
 
 | Tool | Input |
