@@ -40,6 +40,12 @@ done
 cp -R "$FONT_BUNDLE" "$STAGE/Contents/Resources/"
 cp Resources/Info.plist "$STAGE/Contents/Info.plist"
 cp Resources/AppIcon.icns "$STAGE/Contents/Resources/AppIcon.icns"
+CLI_VERSION=$("$STAGE/Contents/MacOS/aistats" version)
+APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$STAGE/Contents/Info.plist")
+if [[ "$CLI_VERSION" != "$APP_VERSION" ]]; then
+  echo "Version mismatch: CLI $CLI_VERSION, app $APP_VERSION" >&2
+  exit 1
+fi
 IDENTITY="${AISTATS_SIGN_IDENTITY:--}"
 codesign --force --sign "$IDENTITY" "$STAGE/Contents/MacOS/aistats"
 codesign --force --sign "$IDENTITY" "$STAGE"

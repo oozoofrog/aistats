@@ -42,7 +42,7 @@ enum PanelFixtures {
             registrations: [
                 .claudeCode: .init(state: .installed),
                 .codex: .init(state: .pathUpdateNeeded(registered: "/fixtures/previous/aistats")),
-                .gemini: .init(state: .notInstalled),
+                .antigravity: .init(state: .notInstalled),
                 .claudeDesktop: .init(state: .nameConflict(registered: "command=/fixtures/foreign args=[] env={TOKEN: …}"),
                                       fingerprint: "0123456789ab"),
                 .cursor: .init(state: .checkFailed("fixture diagnostic"), message: "설정을 읽지 못해 바꾸지 않았습니다",

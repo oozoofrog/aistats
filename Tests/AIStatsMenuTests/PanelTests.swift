@@ -329,3 +329,16 @@ func toolLabelsMatchBaseline(input: (tool: String, detail: String?, label: Strin
     #expect(try count(10, enabled: false) == 0)
     #expect(try count(150) == 0)
 }
+
+@Test func antigravitySessionUsesClientOrAgentProcessName() {
+    let now = Date()
+    var session = ActivityStore.Presence(name: "session", pid: 42, client: "Antigravity CLI", connectedAt: now, lastSeen: now)
+    #expect(AppModel.target(of: session) == .antigravity)
+    session.client = "gemini-cli"
+    #expect(AppModel.target(of: session) == nil)
+    session.client = "mcp-client"
+    session.agentName = "agy"
+    #expect(AppModel.target(of: session) == .antigravity)
+    session.client = "cursor"
+    #expect(AppModel.target(of: session) == .cursor)
+}

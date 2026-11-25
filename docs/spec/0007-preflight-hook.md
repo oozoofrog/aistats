@@ -98,7 +98,7 @@ The `memoryPressure` detail also states swap used, as the diagnosis does. Swap a
 | PRE-015 | With `--agent claude-code` and Readiness `caution`, stdout MUST be one JSON object in the Table 2 shape. | Parse stdout with a strict JSON parser. Compare the complete key set with Table 2. Verify one trailing newline at most and no other bytes. |
 | PRE-016 | With `--agent codex` and Readiness `caution`, stdout MUST be one JSON object in the Table 2 shape. | As PRE-015, with `--agent codex`. |
 | PRE-017 | Agent Mode output MUST NOT contain a permission decision or a stop instruction. | Verify that stdout has no `permissionDecision`, `decision`, `continue`, `stopReason`, or `suppressOutput` key at any depth. |
-| PRE-018 | The `--agent` option MUST accept only `claude-code` and `codex`. | Run with `--agent gemini`, `--agent cursor`, and `--agent claude-desktop`. Verify empty stdout, status 0, and a stderr message that names the missing non-blocking pre-execution channel. |
+| PRE-018 | The `--agent` option MUST accept only `claude-code` and `codex`. | Run with `--agent antigravity`, `--agent cursor`, and `--agent claude-desktop`. Verify empty stdout, status 0, and a stderr message that names the missing non-blocking pre-execution channel. |
 | PRE-019 | The Context Text MUST be at most 512 bytes in UTF-8. | Fixture with all six Signals in caution and a 255-byte mount path. Measure the Context Text. |
 | PRE-020 | The Context Text MUST name each Caution Signal with its observed value and its threshold. | Fixture per Signal. Verify the metric name, the value, and the threshold in the text. |
 | PRE-021 | The Context Text MUST name `wait_for` and `aistats wait` as options before heavy work. | Substring check on a caution fixture. |
@@ -153,7 +153,7 @@ The `memoryPressure` detail also states swap used, as the diagnosis does. Swap a
 | PRE-036 | `install --hooks` MUST write a byte-exact backup of the settings file before a change. | Verify a backup under `AISTATS_HOME/backups/` whose SHA-256 equals the original file. |
 | PRE-037 | Each installed handler MUST run Preflight with `--agent claude-code` and an `if` filter for one heavy command pattern. | Inspect the written handler. Compare the patterns with the agreed default list (see Open questions). |
 | PRE-038 | `uninstall --hooks` MUST remove only the AIStats handler. | Install, add an unrelated handler by hand, then uninstall. Verify that the unrelated handler and all other bytes remain. |
-| PRE-039 | `install --hooks` MUST fail with status 1 for `codex`, `gemini`, `claude-desktop`, and `cursor`. | Run each. Verify status 1, an unchanged config, and a message that names the reason. |
+| PRE-039 | `install --hooks` MUST fail with status 1 for `codex`, `antigravity`, `claude-desktop`, and `cursor`. | Run each. Verify status 1, an unchanged config, and a message that names the reason. |
 
 ## Non-goals
 

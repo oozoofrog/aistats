@@ -248,10 +248,6 @@ struct BackupStore {
 
 /// A JSON config's top level, `mcpServers` and the `aistats` entry (with its exact bytes and layout).
 struct ConfigDocument {
-    /// `.json`: strict JSON (Claude Code, Claude Desktop, Cursor). `.jsonc`: JSON with `//` and `/* */`
-    /// comments, as Gemini CLI reads settings.json (comments stripped, then strict JSON).
-    enum Syntax { case json, jsonc }
-
     var root: [String: Any] = [:]
     var servers: [String: Any] = [:]
     var entry: Any?
@@ -260,28 +256,19 @@ struct ConfigDocument {
 
     static func isBlank(_ data: Data) -> Bool { data.allSatisfy { $0 == 0x20 || $0 == 0x0A || $0 == 0x0D || $0 == 0x09 } }
 
-    /// Refuses (throws) anything it can't judge unambiguously: invalid JSON (for `.json`, also comments),
+    /// Refuses (throws) anything it can't judge unambiguously: invalid JSON (including comments),
     /// a non-object top level or `mcpServers`, and duplicate keys on the way to the entry (parsers disagree
     /// on which one wins).
-    static func parse(_ data: Data?, syntax: Syntax, name: String) throws -> ConfigDocument {
+    static func parse(_ data: Data?, name: String) throws -> ConfigDocument {
         guard let data, !isBlank(data) else { return ConfigDocument() }
-        let strict: Data
-        switch syntax {
-        case .json:
-            strict = data
-        case .jsonc:
-            guard let stripped = JSONComments.strip(data) else { throw ConfigError("\(name) has an unterminated comment") }
-            strict = stripped
-        }
-        guard let root = try? JSONSerialization.jsonObject(with: strict) as? [String: Any] else {
-            if syntax == .json, let stripped = JSONComments.strip(data), stripped != data,
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            if let stripped = JSONComments.strip(data), stripped != data,
                (try? JSONSerialization.jsonObject(with: stripped)) != nil {
                 throw ConfigError("\(name) contains comments, which this file format doesn't allow; AIStats won't edit it (left unchanged)")
             }
             throw ConfigError("\(name) is not valid JSON")
         }
-        // Comments became spaces, so offsets in `strict` are offsets in `data`.
-        let layout = try JSONKeyScan.layout(strict, name: name)
+        let layout = try JSONKeyScan.layout(data, name: name)
         var doc = ConfigDocument(root: root, layout: layout)
         if let existing = root["mcpServers"] {
             guard let dict = existing as? [String: Any] else { throw ConfigError("mcpServers in \(name) is not an object") }
@@ -655,7 +642,7 @@ enum JSONConfigEditor {
         let before = original.flatMap { fingerprint(target, data: $0) }
         if original != nil, before == nil { throw ConfigError("\(target.lastPathComponent) changed while it was being read; try again (left unchanged)") }
         let name = target.lastPathComponent
-        let doc = try ConfigDocument.parse(original, syntax: .json, name: name)
+        let doc = try ConfigDocument.parse(original, name: name)
         let data: Data
         let intended: Any?
         switch try decide(doc.entry, doc.entrySource) {
@@ -723,7 +710,7 @@ enum JSONConfigEditor {
     /// top-level key and every other server as they were.
     static func verify(_ data: Data, from doc: ConfigDocument, intended: Any?, name: String) throws {
         let fail = ConfigError("internal error: the edit of \(name) did not check out (left unchanged)")
-        guard let after = try? ConfigDocument.parse(data, syntax: .json, name: name) else { throw fail }
+        guard let after = try? ConfigDocument.parse(data, name: name) else { throw fail }
         func same(_ a: Any?, _ b: Any?) -> Bool {
             switch (a, b) {
             case (nil, nil): return true

@@ -352,7 +352,7 @@ private func structured(_ r: [String: Any]?) -> [String: Any]? {
 // MARK: - Agent registration
 
 /// Fake agent CLIs that edit config files the way the real ones do, and log their arguments.
-/// Like the real tools: `codex`/`gemini mcp add` overwrite an existing name, `claude mcp add` refuses it;
+/// Like the real tools: `codex mcp add` overwrites an existing name, `claude mcp add` refuses it;
 /// `codex mcp get --json` is how Codex reports what it parsed (kept in `aistats.json` here).
 struct FakeAgents {
     let root = tempDir()
@@ -361,10 +361,10 @@ struct FakeAgents {
     var home: URL { root.appendingPathComponent("home") }
     var log: URL { root.appendingPathComponent("calls.log") }
 
-    init(clis: [String] = ["claude", "codex", "gemini"], apps appNames: [String] = ["Claude.app", "Cursor.app"]) throws {
+    init(clis: [String] = ["claude", "codex", "agy"], apps appNames: [String] = ["Claude.app", "Cursor.app"]) throws {
         let fm = FileManager.default
         for d in [bin, apps, home, root.appendingPathComponent("claude"), root.appendingPathComponent("codex"),
-                  root.appendingPathComponent("gemini/.gemini"), root.appendingPathComponent("aistats-home")] {
+                  root.appendingPathComponent("aistats-home")] {
             try fm.createDirectory(at: d, withIntermediateDirectories: true)
         }
         for a in appNames { try fm.createDirectory(at: apps.appendingPathComponent(a), withIntermediateDirectories: true) }
@@ -420,24 +420,7 @@ struct FakeAgents {
               rm -f "$js"; printf 'model = "x"\n' > "$cfg";;
             esac
             """#,
-            "gemini": #"""
-            #!/bin/sh
-            echo "gemini $*" >> "$FAKE_LOG"
-            [ -n "$FAKE_FAIL_GEMINI" ] && { echo "simulated failure" >&2; exit 1; }
-            cfg="$GEMINI_CLI_HOME/.gemini/settings.json"
-            sub="$1 $2"; shift 2
-            case "$sub" in
-            "mcp add")
-              envj=""
-              while [ $# -gt 0 ]; do case "$1" in
-                -s) shift 2;;
-                -e) envj=",\"env\":{\"${2%%=*}\":\"${2#*=}\"}"; shift 2;;
-                *) break;;
-              esac; done
-              printf '{"mcpServers":{"aistats":{"command":"%s","args":["%s"]%s}}}' "$2" "$3" "$envj" > "$cfg";;
-            "mcp remove") printf '{"mcpServers":{}}' > "$cfg" ;;
-            esac
-            """#,
+            "agy": "#!/bin/sh\nexit 1\n",
         ]
         for name in clis {
             let url = bin.appendingPathComponent(name)
@@ -450,7 +433,6 @@ struct FakeAgents {
         var vars = ["HOME": home.path, "PATH": "/usr/bin:/bin", "FAKE_LOG": log.path,
                     "CLAUDE_CONFIG_DIR": root.appendingPathComponent("claude").path,
                     "CODEX_HOME": root.appendingPathComponent("codex").path,
-                    "GEMINI_CLI_HOME": root.appendingPathComponent("gemini").path,
                     "AISTATS_HOME": root.appendingPathComponent("aistats-home").path]
         vars.merge(extra) { _, b in b }
         return RegistrationEnvironment(home: home, variables: vars, cliSearchPaths: [bin.path], appSearchPaths: [apps.path], timeout: 20,
@@ -519,13 +501,12 @@ private func entry(_ url: URL) throws -> [String: Any]? {
         }
         // One add and one remove per CLI agent: the second install didn't duplicate.
         let calls = f.calls()
-        for cli in ["claude", "codex", "gemini"] {
+        for cli in ["claude", "codex"] {
             #expect(calls.filter { $0.hasPrefix("\(cli) mcp add") }.count == 1, "\(cli): \(calls)")
             #expect(calls.filter { $0.hasPrefix("\(cli) mcp remove") }.count == 1)
         }
         #expect(calls.contains("claude mcp add --scope user aistats -e AISTATS_MANAGED=1 -- /Apps/AIStats.app/Contents/MacOS/aistats mcp"))
         #expect(calls.contains("codex mcp add aistats --env AISTATS_MANAGED=1 -- /Apps/AIStats.app/Contents/MacOS/aistats mcp"))
-        #expect(calls.contains("gemini mcp add -s user -e AISTATS_MANAGED=1 aistats /Apps/AIStats.app/Contents/MacOS/aistats mcp"))
         #expect(calls.contains("codex mcp get aistats --json"), "codex status comes from the codex CLI")
         // The JSON agents got the marker too.
         let desktop = try #require(try { () throws -> [String: Any]? in
@@ -545,7 +526,7 @@ private func entry(_ url: URL) throws -> [String: Any]? {
             #expect(new.status(t).state == .installed)
             #expect(old.status(t).state == .pathUpdateNeeded(registered: "/new/place/aistats"))
         }
-        // Codex and Gemini update with one overwriting add; Claude needs remove + add.
+        // Codex updates with one overwriting add; Claude needs remove + add.
         #expect(!f.calls().contains("codex mcp remove aistats"))
         #expect(f.calls().contains("claude mcp remove aistats --scope user"))
     }
@@ -864,7 +845,7 @@ private func entry(_ url: URL) throws -> [String: Any]? {
         #expect(byTarget[.codex]?.ok == false)
         #expect(byTarget[.codex]?.message.contains("simulated add failure") == true)
         #expect(r.status(.codex).state == .notInstalled)
-        #expect(byTarget[.gemini]?.status.state == .agentNotFound)
+        #expect(byTarget[.antigravity]?.status.state == .agentNotFound)
         #expect(byTarget[.cursor]?.status.state == .agentNotFound)
         #expect(!FileManager.default.fileExists(atPath: f.cursorConfig.path), "nothing written for a missing agent")
         #expect(r.status(.claudeCode).cliPath == f.bin.appendingPathComponent("claude").path, "status says which CLI was used")

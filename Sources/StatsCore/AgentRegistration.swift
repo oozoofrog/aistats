@@ -6,7 +6,7 @@ import Foundation
 ///
 /// Guarantees (users' configs are not ours):
 /// - G1: AIStats never creates, changes or deletes a file it didn't create, except the `aistats` entry of
-///   the target config (and a same-folder temp file that becomes it). Claude Desktop / Cursor JSON is
+///   the target config (and a same-folder temp file that becomes it). Antigravity / Claude Desktop / Cursor JSON is
 ///   edited textually: only the `mcpServers.aistats` member's bytes change, every other byte stays.
 ///   Backups and locks live in AIStats's own data folder, in folders that must be real directories owned
 ///   by the user (never a symlink); a folder AIStats creates is 0700, an existing one keeps its mode.
@@ -20,13 +20,13 @@ import Foundation
 ///   SHA-256 of the entry's exact source bytes (JSON member text; for Codex the full `codex mcp get --json`
 ///   output with sorted keys plus the TOML statements of the entry). The first 12 hex digits are shown
 ///   and named in `--replace`; every later comparison uses the full hash. Ambiguous configs (duplicate
-///   keys, comments where the format has none, a Codex/Gemini file the agent itself can't parse, a
+///   keys, comments where the format has none, a Codex file the agent itself can't parse, a
 ///   Codex config that defines `aistats` while Codex says it doesn't) are check_failed, never
 ///   "not installed".
 /// - G3: before a config changes, a byte-exact copy is written to `$AISTATS_HOME/backups/<agent>/`.
 /// - G4: a failed change either leaves the previous entry as it was, restores it exactly, or says what the
 ///   entry is now and where the backup is.
-/// - Relative `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME` and `AISTATS_HOME` are resolved once
+/// - Relative `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `AISTATS_HOME` are resolved once
 ///   against this process's working directory, and the agent CLIs get that same absolute value.
 ///
 /// Residual risk (documented, not handled):
@@ -35,12 +35,12 @@ import Foundation
 /// - wrappers that rewrite the config right before the agent's own CLI runs;
 /// - side effects of the agents' own CLIs on their own files, which AIStats runs but does not control:
 ///   Claude Code adds its own keys to `.claude.json` and rotates `backups/.claude.json.backup.*` next to
-///   it; Gemini CLI rewrites `~/.gemini/projects.json` and creates `history/` and `tmp/`; Codex creates
+///   it; Codex creates
 ///   `$CODEX_HOME/tmp/arg0-*` even for `codex mcp get`.
 public enum AgentTarget: String, CaseIterable, Sendable, Codable {
     case claudeCode = "claude-code"
     case codex
-    case gemini
+    case antigravity
     case claudeDesktop = "claude-desktop"
     case cursor
 
@@ -48,7 +48,7 @@ public enum AgentTarget: String, CaseIterable, Sendable, Codable {
         switch self {
         case .claudeCode: return "Claude Code"
         case .codex: return "Codex"
-        case .gemini: return "Gemini CLI"
+        case .antigravity: return "Antigravity"
         case .claudeDesktop: return "Claude Desktop"
         case .cursor: return "Cursor"
         }
@@ -58,14 +58,14 @@ public enum AgentTarget: String, CaseIterable, Sendable, Codable {
         switch self {
         case .claudeCode: return "claude"
         case .codex: return "codex"
-        case .gemini: return "gemini"
-        case .claudeDesktop, .cursor: return nil
+        case .antigravity, .claudeDesktop, .cursor: return nil
         }
     }
 
     var appName: String? {
         switch self {
         case .claudeDesktop: return "Claude.app"
+        case .antigravity: return "Antigravity.app"
         case .cursor: return "Cursor.app"
         default: return nil
         }
@@ -139,7 +139,7 @@ public struct RegistrationEnvironment: Sendable {
     public var backupDirectory: URL { dataDirectory.appendingPathComponent("backups", isDirectory: true) }
 
     /// Config-folder overrides that may be relative; they are made absolute once (see `absolute`).
-    public static let pathVariables = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME", "AISTATS_HOME"]
+    public static let pathVariables = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "AISTATS_HOME"]
 
     /// `currentDirectory` (default: this process's) is what relative overrides are resolved against.
     public init(home: URL, variables: [String: String], cliSearchPaths: [String], appSearchPaths: [String],
@@ -211,7 +211,7 @@ public struct RegistrationEnvironment: Sendable {
 
     func value(_ key: String) -> String? { variables[key].flatMap { $0.isEmpty ? nil : $0 } }
 
-    /// Child environment: ours plus a PATH that includes the search directories (gemini needs node).
+    /// Child environment: ours plus a PATH that includes the search directories.
     var childEnvironment: [String: String] {
         var env = variables
         env["HOME"] = home.path
@@ -240,8 +240,8 @@ public struct RegistrationEnvironment: Sendable {
             return home.appendingPathComponent(".claude.json")
         case .codex:
             return URL(fileURLWithPath: value("CODEX_HOME") ?? home.appendingPathComponent(".codex").path).appendingPathComponent("config.toml")
-        case .gemini:
-            return URL(fileURLWithPath: value("GEMINI_CLI_HOME") ?? home.path).appendingPathComponent(".gemini/settings.json")
+        case .antigravity:
+            return home.appendingPathComponent(".gemini/config/mcp_config.json")
         case .claudeDesktop:
             return home.appendingPathComponent("Library/Application Support/Claude/claude_desktop_config.json")
         case .cursor:
@@ -250,10 +250,13 @@ public struct RegistrationEnvironment: Sendable {
     }
 
     func agentPresent(_ target: AgentTarget) -> Bool {
+        if target == .antigravity, findCLI("agy") != nil { return true }
         if let cli = target.cliName { return findCLI(cli) != nil }
         if let app = target.appName, appSearchPaths.contains(where: { FileManager.default.fileExists(atPath: ($0 as NSString).appendingPathComponent(app)) }) {
             return true
         }
+        // Antigravity shares the .gemini tree with other tools.
+        if target == .antigravity { return FileManager.default.fileExists(atPath: configURL(target).path) }
         // The app may live elsewhere; its config folder shows it was used here.
         return FileManager.default.fileExists(atPath: configURL(target).deletingLastPathComponent().path)
     }
@@ -316,7 +319,7 @@ public struct RegistrationEntry: Equatable, Sendable {
         (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed])) ?? Data()
     }
 
-    /// Claude Code, Gemini CLI, Claude Desktop, Cursor: `{"command": …, "args": […], "env": {…}}`.
+    /// Claude Code, Antigravity, Claude Desktop, Cursor: `{"command": …, "args": […], "env": {…}}`.
     static func fromJSONConfig(_ value: Any, source: Data? = nil) -> RegistrationEntry {
         guard let dict = value as? [String: Any] else {
             return RegistrationEntry(command: nil, args: [], env: [:], extras: ["(not an object)"], raw: encodeRaw(value), source: source)
@@ -498,7 +501,7 @@ public final class AgentRegistrar: @unchecked Sendable {
     private func readEntry(_ target: AgentTarget, url: URL) throws -> RegistrationEntry? {
         switch target {
         case .codex: return try readCodex(url).entry
-        default: return try entry(target, from: try Self.readConfigData(url), name: url.lastPathComponent)
+        default: return try entry(from: try Self.readConfigData(url), name: url.lastPathComponent)
         }
     }
 
@@ -554,9 +557,8 @@ public final class AgentRegistrar: @unchecked Sendable {
     }
 
     /// The `aistats` entry of a JSON config's bytes (duplicate keys on the way to it are an error).
-    private func entry(_ target: AgentTarget, from data: Data?, name: String) throws -> RegistrationEntry? {
-        // Gemini CLI reads settings.json as JSON with comments; the others are strict JSON.
-        let doc = try ConfigDocument.parse(data, syntax: target == .gemini ? .jsonc : .json, name: name)
+    private func entry(from data: Data?, name: String) throws -> RegistrationEntry? {
+        let doc = try ConfigDocument.parse(data, name: name)
         return doc.entry.map { RegistrationEntry.fromJSONConfig($0, source: doc.entrySource) }
     }
 
@@ -702,7 +704,7 @@ public final class AgentRegistrar: @unchecked Sendable {
         "the aistats entry changed after it was checked (now: \(now.map { "\($0.summary); entry \($0.fingerprint)" } ?? "none")); left unchanged"
     }
 
-    /// Claude Desktop / Cursor: one locked, checked edit of `mcpServers.aistats`.
+    /// Antigravity / Claude Desktop / Cursor: one locked, checked edit of `mcpServers.aistats`.
     private func changeJSON(_ target: AgentTarget, expected: RegistrationEntry?, install: Bool) -> Change {
         let url = environment.configURL(target)
         do {
@@ -733,7 +735,7 @@ public final class AgentRegistrar: @unchecked Sendable {
         }
     }
 
-    /// Claude Code, Codex, Gemini: their own CLI writes the config. Right before it runs, the config's bytes
+    /// Claude Code, Codex: their own CLI writes the config. Right before it runs, the config's bytes
     /// are read once, the entry is re-checked on exactly those bytes, and those bytes are the backup.
     private func changeWithCLI(_ target: AgentTarget, expected: RegistrationEntry?, install: Bool) -> Change {
         let url = environment.configURL(target)
@@ -745,7 +747,7 @@ public final class AgentRegistrar: @unchecked Sendable {
                 (current, snapshot) = try readCodex(url)
             } else {
                 snapshot = try Self.readConfigData(url)
-                current = try entry(target, from: snapshot, name: url.lastPathComponent)
+                current = try entry(from: snapshot, name: url.lastPathComponent)
             }
             guard current == expected else { return Change(error: Self.changedMessage(current)) }
         } catch {
@@ -770,7 +772,7 @@ public final class AgentRegistrar: @unchecked Sendable {
             backups(target).prune(except: backupURL)
             return Change(error: nil, backup: backup)
         }
-        // Codex and Gemini overwrite an existing name in one write; Claude refuses, so remove first.
+        // Codex overwrites an existing name in one write; Claude refuses, so remove first.
         if target == .claudeCode, expected != nil {
             do { try remove(target) } catch { return Change(error: "\(error); \(now())\(saved)", backup: backup) }
         }
@@ -820,8 +822,7 @@ public final class AgentRegistrar: @unchecked Sendable {
         switch target {
         case .claudeCode: try runCLI(target, ["mcp", "add", "--scope", "user", name, "-e", marker, "--", binaryPath, "mcp"])
         case .codex: try runCLI(target, ["mcp", "add", name, "--env", marker, "--", binaryPath, "mcp"])
-        case .gemini: try runCLI(target, ["mcp", "add", "-s", "user", "-e", marker, name, binaryPath, "mcp"])
-        case .claudeDesktop, .cursor: break
+        case .antigravity, .claudeDesktop, .cursor: break
         }
     }
 
@@ -830,8 +831,7 @@ public final class AgentRegistrar: @unchecked Sendable {
         switch target {
         case .claudeCode: try runCLI(target, ["mcp", "remove", name, "--scope", "user"])
         case .codex: try runCLI(target, ["mcp", "remove", name])
-        case .gemini: try runCLI(target, ["mcp", "remove", "-s", "user", name])
-        case .claudeDesktop, .cursor: break
+        case .antigravity, .claudeDesktop, .cursor: break
         }
     }
 

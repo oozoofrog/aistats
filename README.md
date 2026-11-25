@@ -44,15 +44,17 @@ From the menu bar panel, press 연결 (connect) next to the agent. Or from a ter
 
 ```sh
 aistats status                    # registration state for every agent
-aistats install claude-code       # or codex, gemini, claude-desktop, cursor, all
+aistats install claude-code       # or codex, antigravity, claude-desktop, cursor, all
 aistats uninstall codex
 ```
 
 Registration only adds, updates or removes the `aistats` entry in the agent's configuration, through the
-agent's own CLI where one exists (Claude Code, Codex, Gemini CLI) or by editing only that member's bytes in
-the JSON file (Claude Desktop, Cursor). An `aistats` entry that AIStats did not create is never replaced
+agent's registration command (Claude Code, Codex) or by editing only that member's bytes in
+the JSON file (Antigravity, Claude Desktop, Cursor). An `aistats` entry that AIStats did not create is never replaced
 unless you confirm that exact entry: `aistats install <agent> --replace <fingerprint>` (the fingerprint is
 shown by `aistats status`). A byte-exact backup of the configuration is written before every change.
+Antigravity uses `~/.gemini/config/mcp_config.json`. Existing Gemini CLI registrations in
+`~/.gemini/settings.json` stay in place.
 `aistats install --help` lists exactly what is changed.
 
 Data, including those backups, lives in `$AISTATS_HOME`, or `~/Library/Application Support/AIStats` by

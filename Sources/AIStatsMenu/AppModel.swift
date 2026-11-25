@@ -496,9 +496,10 @@ final class AppModel {
         let c = (p.client ?? p.name).lowercased()
         if c.contains("claude-code") || c == "claude code" { return .claudeCode }
         if c.contains("codex") { return .codex }
-        if c.contains("gemini") { return .gemini }
+        if c.contains("antigravity") || c == "agy" { return .antigravity }
         if c.contains("claude-ai") || c.contains("claude desktop") { return .claudeDesktop }
         if c.contains("cursor") { return .cursor }
+        if p.agentName?.lowercased() == "agy" { return .antigravity }
         return nil
     }
 

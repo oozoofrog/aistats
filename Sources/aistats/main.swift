@@ -35,7 +35,7 @@ USAGE
   aistats baselines clear                         delete recorded job durations and replace their signature key
   aistats setup                                   print commands that register the MCP server by hand
 
-AGENT is one of: claude-code, codex, gemini, claude-desktop, cursor.
+AGENT is one of: claude-code, codex, antigravity, claude-desktop, cursor.
 
 Data (including backups of agent configs taken before a change) lives in $AISTATS_HOME
 or ~/Library/Application Support/AIStats.
@@ -230,10 +230,7 @@ func run() throws {
         Codex:
           codex mcp add aistats --env AISTATS_MANAGED=1 -- "\(path)" mcp
 
-        Gemini CLI:
-          gemini mcp add -s user -e AISTATS_MANAGED=1 aistats "\(path)" mcp
-
-        Other MCP clients (JSON config):
+        Antigravity (~/.gemini/config/mcp_config.json) and other JSON MCP clients:
           { "mcpServers": { "aistats": { "command": "\(path)", "args": ["mcp"], "env": { "AISTATS_MANAGED": "1" } } } }
 
         Claude Code preflight hook:
@@ -342,11 +339,11 @@ aistats status|install|uninstall AGENT|all — register this binary's MCP server
   aistats install AGENT|all [--replace ENTRY] [--json]
   aistats uninstall AGENT|all [--json]
 
-AGENT is one of: claude-code, codex, gemini, claude-desktop, cursor.
+AGENT is one of: claude-code, codex, antigravity, claude-desktop, cursor.
 
-What AIStats changes: only the "aistats" entry of the agent's config. Claude Desktop and Cursor JSON is
-edited as text, so every byte outside that entry stays as it was; Claude Code, Codex and Gemini CLI are
-changed through their own CLI (claude/codex/gemini mcp add|remove).
+What AIStats changes: only the "aistats" entry of the agent's config. Antigravity, Claude Desktop and Cursor JSON is
+edited as text, so every byte outside that entry stays as it was; Claude Code and Codex are
+changed through their own CLI (claude/codex mcp add|remove).
 Before a change, a byte-exact copy of the config is saved in $AISTATS_HOME/backups/<agent>/ (default
 ~/Library/Application Support/AIStats); the newest 5 that AIStats made are kept.
 
@@ -357,12 +354,11 @@ you name it: 'aistats status' shows "entry <fingerprint>" (SHA-256 of the entry'
 judge unambiguously (duplicate keys, comments in a format without them, a file the agent can't parse)
 are reported as check_failed and not changed.
 
-Relative CLAUDE_CONFIG_DIR, CODEX_HOME, GEMINI_CLI_HOME and AISTATS_HOME are resolved against the
+Relative CLAUDE_CONFIG_DIR, CODEX_HOME and AISTATS_HOME are resolved against the
 current directory, and the agent CLIs get that same absolute path.
 
 Not controlled by AIStats (the agents' own CLIs do this to their own files when AIStats runs them):
   - Claude Code adds its own keys to .claude.json and keeps backups/.claude.json.backup.* next to it.
-  - Gemini CLI updates ~/.gemini/projects.json and creates ~/.gemini/history and ~/.gemini/tmp.
   - Codex creates $CODEX_HOME/tmp/arg0-* (even for a read like 'codex mcp get').
 Also not handled: another program rewriting the same config in the few milliseconds between AIStats's
 last check and its write, and wrappers that change the config right before the agent CLI runs.

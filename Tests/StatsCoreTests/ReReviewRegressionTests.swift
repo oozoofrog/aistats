@@ -67,13 +67,6 @@ private final class Counter: @unchecked Sendable {
             #expect(try String(contentsOf: f.cursorConfig, encoding: .utf8) == text)
         }
         #expect(f.backups(.cursor).isEmpty)
-        // Gemini (its CLI writes the file; comments allowed): refused before the CLI runs.
-        let gemini = f.root.appendingPathComponent("gemini/.gemini/settings.json")
-        try "{// note\n\"mcpServers\":{},\"mcpServers\":{\"aistats\":{\"command\":\"/foreign\",\"args\":[\"mcp\"]}}}"
-            .write(to: gemini, atomically: true, encoding: .utf8)
-        guard case .checkFailed = r.status(.gemini).state else { Issue.record("gemini duplicate not refused"); return }
-        #expect(!r.install(.gemini).ok)
-        #expect(!f.calls().contains { $0.hasPrefix("gemini mcp") })
         // Duplicates elsewhere in the document are not ours to judge.
         try writeCursor(f, #"{"other":{"a":1,"a":2},"mcpServers":{}}"#)
         #expect(r.status(.cursor).state == .notInstalled)

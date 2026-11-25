@@ -1139,7 +1139,7 @@ public enum ProcessTable {
 /// Already-encoded JSON (from JSONEncoder) embedded as-is in a response.
 struct RawJSON { let data: Data }
 
-public enum AIStatsVersion { public static let current = "0.3.0" }
+public enum AIStatsVersion { public static let current = "0.4.0" }
 
 /// Serializes JSON-RPC messages. Unlike JSONSerialization it writes doubles in shortest form
 /// (34.7, not 34.700000000000003) and can embed `RawJSON`, which keeps responses small.

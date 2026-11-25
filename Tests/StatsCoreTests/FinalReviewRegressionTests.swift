@@ -27,36 +27,36 @@ private func entry(_ command: String, _ args: [String] = ["mcp"], env: [String: 
     @Test func relativeOverridesResolveOnceAndReachTheChild() throws {
         let f = try FakeAgents()
         let work = f.root.appendingPathComponent("work")
-        for d in ["rel-claude", "rel-codex", "rel-gemini/.gemini", "rel-data"] {
+        for d in ["rel-claude", "rel-codex", "rel-data"] {
             try FileManager.default.createDirectory(at: work.appendingPathComponent(d), withIntermediateDirectories: true)
         }
-        // What the child would have used before (it runs in HOME): a foreign Gemini entry that must stay.
-        let decoy = f.home.appendingPathComponent("rel-gemini/.gemini/settings.json")
+        // The retired Gemini CLI config can contain a foreign entry.
+        let decoy = f.home.appendingPathComponent(".gemini/settings.json")
         let foreign = #"{"mcpServers":{"aistats":{"command":"/foreign","args":["mcp"],"env":{"FOREIGN":"value"}}}}"#
         try write(foreign, decoy)
-        let env = f.environment(["CLAUDE_CONFIG_DIR": "rel-claude", "CODEX_HOME": "rel-codex", "GEMINI_CLI_HOME": "rel-gemini",
+        let env = f.environment(["CLAUDE_CONFIG_DIR": "rel-claude", "CODEX_HOME": "rel-codex",
                                  "AISTATS_HOME": "rel-data"], cwd: work.path)
         #expect(env.configURL(.claudeCode).path == work.path + "/rel-claude/.claude.json")
         #expect(env.configURL(.codex).path == work.path + "/rel-codex/config.toml")
-        #expect(env.configURL(.gemini).path == work.path + "/rel-gemini/.gemini/settings.json")
+        #expect(env.configURL(.antigravity).path == f.home.path + "/.gemini/config/mcp_config.json")
         #expect(env.dataDirectory.path == work.path + "/rel-data")
         let child = env.childEnvironment
-        for (k, v) in [("CLAUDE_CONFIG_DIR", "rel-claude"), ("CODEX_HOME", "rel-codex"), ("GEMINI_CLI_HOME", "rel-gemini"), ("AISTATS_HOME", "rel-data")] {
+        for (k, v) in [("CLAUDE_CONFIG_DIR", "rel-claude"), ("CODEX_HOME", "rel-codex"), ("AISTATS_HOME", "rel-data")] {
             #expect(child[k] == work.path + "/" + v, "\(k)")
         }
         #expect(RegistrationEnvironment.absolute("~/x", cwd: "/w", home: "/h") == "/h/x")
         #expect(RegistrationEnvironment.absolute("/abs", cwd: "/w", home: "/h") == "/abs")
 
         let r = AgentRegistrar(binaryPath: "/x/aistats", environment: env)
-        for t in [AgentTarget.claudeCode, .codex, .gemini] {
+        for t in [AgentTarget.claudeCode, .codex, .antigravity] {
             #expect(r.status(t).state == .notInstalled, "\(t)")
             let o = r.install(t)
             #expect(o.ok, "\(t): \(o.message)")
-            #expect(r.status(t).state == .installed, "\(t): AIStats and the agent CLI agree on the file")
+            #expect(r.status(t).state == .installed, "\(t): AIStats and the agent configuration agree")
         }
         #expect(FileManager.default.fileExists(atPath: work.path + "/rel-claude/.claude.json"))
-        #expect(FileManager.default.fileExists(atPath: work.path + "/rel-gemini/.gemini/settings.json"))
-        #expect(bytes(decoy) == Data(foreign.utf8), "the file the child would have resolved on its own is untouched")
+        #expect(FileManager.default.fileExists(atPath: env.configURL(.antigravity).path))
+        #expect(bytes(decoy) == Data(foreign.utf8), "the existing Gemini CLI entry is preserved")
         #expect(!FileManager.default.fileExists(atPath: f.home.appendingPathComponent("rel-claude").path))
     }
 
@@ -285,21 +285,20 @@ private func entry(_ command: String, _ args: [String] = ["mcp"], env: [String: 
         #expect(scan.defined && Set(scan.extras) == ["required", "cwd"], "\(scan.extras)")
     }
 
-    /// A7: Gemini reads settings.json as JSON with comments; what it rejects is check_failed.
-    @Test func geminiConfigTheCLIRejectsIsCheckFailed() throws {
+    /// Invalid Antigravity configuration must survive a registration attempt.
+    @Test func invalidAntigravityConfigIsCheckFailed() throws {
         let f = try FakeAgents()
-        let config = f.root.appendingPathComponent("gemini/.gemini/settings.json")
+        let config = f.environment().configURL(.antigravity)
         let rejected = "{'mcpServers':{},'mcp\\u0053ervers':{'aistats':{'command':'/foreign','args':['mcp']}}}"
         try write(rejected, config)
         let r = AgentRegistrar(binaryPath: "/x/aistats", environment: f.environment())
-        guard case .checkFailed = r.status(.gemini).state else { Issue.record("expected check_failed: \(r.status(.gemini).state)"); return }
-        #expect(!r.install(.gemini).ok)
+        guard case .checkFailed = r.status(.antigravity).state else { Issue.record("expected check_failed: \(r.status(.antigravity).state)"); return }
+        #expect(!r.install(.antigravity).ok)
         #expect(bytes(config) == Data(rejected.utf8))
-        #expect(!f.calls().contains { $0.hasPrefix("gemini mcp") })
-        // Comments are fine (and an entry inside them doesn't count).
+        // Antigravity uses a strict JSON config.
         try write("{\n  // \"aistats\": {}\n  /* x */ \"mcpServers\": {\"u\": \"http://a//b\"}\n}\n", config)
-        #expect(r.status(.gemini).state == .notInstalled)
+        guard case .checkFailed = r.status(.antigravity).state else { Issue.record("comments accepted"); return }
         try write("{\"mcpServers\": {}, \"mcpServers\": {}}", config)
-        guard case .checkFailed = r.status(.gemini).state else { Issue.record("duplicate keys"); return }
+        guard case .checkFailed = r.status(.antigravity).state else { Issue.record("duplicate keys"); return }
     }
 }
