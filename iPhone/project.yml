@@ -1,0 +1,17 @@
+name: AIStatsRemote
+targets:
+  AIStatsRemote:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [AIStatsRemote.swift]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.oozoofrog.aistats.remote
+      CODE_SIGN_ENTITLEMENTS: AIStatsRemote.entitlements
+      GENERATE_INFOPLIST_FILE: YES
+      INFOPLIST_KEY_CFBundleDisplayName: AIStats
+      INFOPLIST_KEY_UILaunchScreen_Generation: YES
+      TARGETED_DEVICE_FAMILY: 1
+      DEVELOPMENT_TEAM: HY47J4787Q
+      CURRENT_PROJECT_VERSION: 1
+      MARKETING_VERSION: 0.1

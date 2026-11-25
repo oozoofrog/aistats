@@ -22,6 +22,7 @@ struct ScreenSnapshot {
     var quietEvent: TimeInterval?
     var warningGeneration: UInt64 = 0
     var registrations: [AgentTarget: AppModel.AgentRow] = [:]
+    var launchAtLogin = LaunchAtLoginState()
 
     func sessionCount(_ target: AgentTarget) -> Int {
         agents.filter { AppModel.target(of: $0) == target }.count
@@ -70,11 +71,13 @@ final class AppModel {
     private let samplerQueue = DispatchQueue(label: "aistats.sampler", qos: .utility)
     private let storeQueue = DispatchQueue(label: "aistats.store", qos: .utility)
     private let registrationQueue = DispatchQueue(label: "aistats.registration", qos: .userInitiated, attributes: .concurrent)
+    private let loginItemQueue = DispatchQueue(label: "aistats.loginItem", qos: .userInitiated)
     private let activityPoll = ActivityPoll()
     private let crossings = OriginCrossings()
     private let processGate: ProcessGeneration
     private let orphanPoll = OrphanPoll()
     private let termination: OrphanTermination.System
+    private let launchAtLogin: LaunchAtLoginOperations
     /// Called when the first Host becomes exposed (true) or the last one stops being exposed (false).
     var exposureChanged: ((Bool) -> Void)?
     /// Called when the presence poll sees a change in the live Sessions.
@@ -90,6 +93,7 @@ final class AppModel {
         switch processGate.setExposed(id, exposed) {
         case .first:
             exposureChanged?(true)
+            refreshLaunchAtLogin()
             refreshRegistrations()
             refresh()
             return true
@@ -114,12 +118,15 @@ final class AppModel {
     }
 
     init(directory: URL = AIStatsPaths.home, registration: RegistrationOperations? = nil,
-         processGate: ProcessGeneration = ProcessGeneration(), termination: OrphanTermination.System? = nil) {
+         processGate: ProcessGeneration = ProcessGeneration(), termination: OrphanTermination.System? = nil,
+         launchAtLogin: LaunchAtLoginOperations = .live) {
         history = HistoryStore(directory: directory)
         self.termination = termination ?? .live(home: directory)
+        self.launchAtLogin = launchAtLogin
         activity = ActivityStore(directory: directory)
         self.processGate = processGate
         if let registration { self.registration = registration }
+        refreshLaunchAtLogin()
         storeQueue.async { [weak self, history] in
             let recent = history.points(since: Date().addingTimeInterval(-Self.refreshInterval * Double(Self.sparklineLength)))
             DispatchQueue.main.async {
@@ -300,6 +307,53 @@ final class AppModel {
         let dir = Bundle.main.executableURL?.deletingLastPathComponent()
             ?? URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
         return dir.appendingPathComponent("aistats").path
+    }
+
+    // MARK: Launch at login
+
+    func refreshLaunchAtLogin() {
+        guard !screen.launchAtLogin.busy else { return }
+        loginItemQueue.async { [weak self, launchAtLogin] in
+            let next = LaunchAtLoginState.refreshed(from: launchAtLogin.status())
+            DispatchQueue.main.async {
+                guard let self, !self.screen.launchAtLogin.busy, self.screen.launchAtLogin != next else { return }
+                self.screen.launchAtLogin = next
+                self.publishScreen()
+            }
+        }
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        guard !screen.launchAtLogin.busy else { return }
+        screen.launchAtLogin.busy = true
+        screen.launchAtLogin.message = nil
+        screen.launchAtLogin.messageIsError = false
+        screen.launchAtLogin.offerSettings = false
+        publishScreen()
+        loginItemQueue.async { [weak self, launchAtLogin] in
+            let next: LaunchAtLoginState
+            if launchAtLogin.status() == .unsupported {
+                next = .applied(requested: enabled, after: .unsupported, error: nil)
+            } else {
+                var failure: Error?
+                do {
+                    try launchAtLogin.setEnabled(enabled)
+                } catch {
+                    failure = error
+                    LaunchAtLoginOperations.logFailure(error, enabled: enabled)
+                }
+                next = .applied(requested: enabled, after: launchAtLogin.status(), error: failure)
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.screen.launchAtLogin = next
+                self.publishScreen()
+            }
+        }
+    }
+
+    func openLoginItemsSettings() {
+        launchAtLogin.openSettings()
     }
 
     // MARK: Agent registration

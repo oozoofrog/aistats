@@ -28,7 +28,8 @@ struct StatusPresentation: Equatable {
             PanelTrace.event("Status write", "", "tooltip")
         }
         if title != last?.title || glyphs != last?.glyphs {
-            button.setAccessibilityLabel(([title] + glyphs.descriptions).joined(separator: " · "))
+            let labels = title == "AIStats" ? [title] : ["AIStats", title]
+            button.setAccessibilityLabel((labels + glyphs.descriptions).joined(separator: " · "))
             PanelTrace.event("Status write", "", "accessibility")
         }
     }

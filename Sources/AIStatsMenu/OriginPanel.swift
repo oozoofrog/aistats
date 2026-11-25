@@ -95,7 +95,7 @@ struct OriginPanel: View {
                     Text(message).fixedSize(horizontal: false, vertical: true)
                     if offerSettings {
                         KeyButton(title: "알림 설정 열기") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.oozoofrog.aistats")!)
                         }
                     }
                 }
@@ -117,8 +117,17 @@ struct OriginPanel: View {
         Task { @MainActor in
             defer { requesting = false }
             do {
-                enabled = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
-                if !enabled { message = "시스템 설정 › 알림에서 AIStats를 허용한 뒤 다시 켜세요."; offerSettings = true }
+                let center = UNUserNotificationCenter.current()
+                let settings = await center.notificationSettings()
+                switch settings.authorizationStatus {
+                case .authorized:
+                    enabled = true
+                case .notDetermined, .provisional:
+                    enabled = try await center.requestAuthorization(options: [.alert])
+                default:
+                    enabled = false
+                }
+                if !enabled { message = "AIStats 알림을 허용한 뒤 다시 켜세요."; offerSettings = true }
             } catch {
                 let error = error as NSError
                 Logger(subsystem: "com.oozoofrog.aistats", category: "notifications")

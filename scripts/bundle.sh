@@ -1,20 +1,30 @@
 #!/bin/bash
-# Builds release binaries and assembles dist/AIStats.app.
-# Signs with $AISTATS_SIGN_IDENTITY (a codesigning identity name or SHA-1 hash) when it is set, else ad-hoc.
-# Uses eyebuild when it is installed (build caches off the internal disk), else plain `swift build`.
+# Build in a temporary directory and atomically install the signed app.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-ROOT=$(pwd)
-if command -v eyebuild >/dev/null 2>&1; then SWIFT=(eyebuild swift release --); else SWIFT=(swift); fi
-"${SWIFT[@]}" build -c release --product AIStatsMenu
-"${SWIFT[@]}" build -c release --product aistats
-BIN=$("${SWIFT[@]}" build -c release --show-bin-path | tail -1)
+if [[ "$PWD" == /Volumes/eyedisk/* || -d /Volumes/eyedisk ]]; then
+  [[ "$(stat -f %d /Volumes/eyedisk)" != "$(stat -f %d /Volumes)" ]] || exit 1
+  export TMPDIR=/Volumes/eyedisk/tmp
+  BUILD_ROOT=/Volumes/eyedisk/build/aistats
+else
+  BUILD_ROOT="${TMPDIR:-/tmp}"
+fi
+mkdir -p "$BUILD_ROOT"
+BUILD=$(mktemp -d "$BUILD_ROOT/install.XXXXXX")
+INSTALL_STAGE=""
+cleanup() {
+  rm -rf "$BUILD"
+  if [[ -n "$INSTALL_STAGE" ]]; then rm -rf "$INSTALL_STAGE"; fi
+}
+trap cleanup EXIT
+SWIFT=(swift build --scratch-path "$BUILD" -c release)
+"${SWIFT[@]}" --product AIStatsMenu
+"${SWIFT[@]}" --product aistats
+BIN=$("${SWIFT[@]}" --show-bin-path)
 
-APP="$ROOT/dist/AIStats.app"
-# Assemble next to the old app, then swap it in with one rename: agents registered with
-# dist/AIStats.app/Contents/MacOS/aistats never find the binary missing mid-build.
-STAGE="$ROOT/dist/.AIStats.app.new"
-rm -rf "$STAGE"
+APP=/Applications/AIStats.app
+INSTALL_STAGE=$(mktemp -d /Applications/.aistats-install.XXXXXX)
+STAGE="$INSTALL_STAGE/AIStats.app"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources"
 cp "$BIN/AIStatsMenu" "$STAGE/Contents/MacOS/AIStatsMenu"
 cp "$BIN/aistats" "$STAGE/Contents/MacOS/aistats"

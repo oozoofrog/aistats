@@ -135,6 +135,14 @@ final class PanelHost {
                                    terminate: { [weak self] row in
                                        guard let self, token.isCurrent else { return }
                                        self.terminate(self, row)
+                                   },
+                                   setLaunchAtLogin: { [weak self] enabled in
+                                       guard token.isCurrent else { return }
+                                       self?.model.setLaunchAtLogin(enabled)
+                                   },
+                                   openLoginItemsSettings: { [weak self] in
+                                       guard token.isCurrent else { return }
+                                       self?.model.openLoginItemsSettings()
                                    })
         content.focusRequest = focusRequest
         focusRequest = nil

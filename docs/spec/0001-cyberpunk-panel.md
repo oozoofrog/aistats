@@ -627,7 +627,7 @@ Use the same formatter branches for the following inputs. Test each input agains
 
 See [ADR 0006](../adr/0006-visual-verification.md) for the verification split.
 
-1. Run `swift test` and `scripts/smoke-mcp.sh dist/AIStats.app/Contents/MacOS/aistats`. Set `TMPDIR` to a temporary directory outside the repository.
+1. Run `swift test` and `scripts/smoke-mcp.sh /Applications/AIStats.app/Contents/MacOS/aistats`. Set `TMPDIR` to a temporary directory outside the repository.
 2. Run Fixture tests for state mapping, text, formatting, consent, timing, phase, and Theme values.
 3. Render the static normal and warning Fixtures at 380 pt width and 2× scale. Compare crops with Tables 1–8.
 4. Compare boot and interruption frames with Table 7. Capture start, midpoint, endpoint, and a loop boundary.
@@ -636,7 +636,7 @@ See [ADR 0006](../adr/0006-visual-verification.md) for the verification split.
 7. Check all six registration states and the pending state. Exercise all result branches with disposable fixtures.
 8. Check VoiceOver, keyboard focus, tooltips, and each display accessibility setting. Check the short-display layout.
 9. Run the 60-second CPU check. Record sampled CPU results and separate trace evidence for clock and scan gating.
-10. Run `scripts/bundle.sh`. Run `codesign --verify --strict dist/AIStats.app`. Launch a copied bundle without access to the original build output. Verify QA-004 and QA-006 through QA-008.
+10. Run `scripts/bundle.sh`. Run `codesign --verify --strict /Applications/AIStats.app`. Launch a copied bundle without access to the original build output. Verify QA-004 and QA-006 through QA-008.
 
 Record the result for each requirement ID with its Fixture, screenshot, trace, or command output. Save review captures in a temporary directory outside the repository. Record any incomplete check with the condition that prevents the check.
 

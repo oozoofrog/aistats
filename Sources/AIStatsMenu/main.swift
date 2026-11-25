@@ -46,6 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             }
             .store(in: &observers)
         if let button = statusItem.button {
+            button.setAccessibilityIdentifier("aistats.statusItem")
+            button.setAccessibilityHelp("AIStats 팝오버를 열거나 닫습니다.")
             button.target = self
             button.action = #selector(togglePopover)
             button.font = S.statusFont
@@ -59,6 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         updateButton()
 
         DisplayOptions.observeChanges { [weak self] in self?.updateSettings() }
+            .store(in: &observers)
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                guard let self, self.popupHost.isExposed || self.windowHost.isExposed else { return }
+                self.model.refreshLaunchAtLogin()
+            }
             .store(in: &observers)
         NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)
             .sink { [weak self] note in
@@ -156,6 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
     private func attachPopoverWindow() {
         if let window = popupHost.controller.view.window {
+            window.setAccessibilityIdentifier("aistats.popover")
+            window.setAccessibilityLabel("AIStats 팝오버")
             popupHost.window = window
             popupHost.reconcile()
         }

@@ -45,11 +45,15 @@ final class PanelContent: ObservableObject {
     let refreshRegistrations: () -> Void
     let confirm: (AgentTarget) -> Void
     let terminate: (OrphanReport.Row) -> Void
+    let setLaunchAtLogin: (Bool) -> Void
+    let openLoginItemsSettings: () -> Void
 
     init(data: PanelData, theme: Theme, size: CGSize, decoration: DecorationContext,
          cells: [EffectID: FrameCell], perform: @escaping (AppModel.Action, AgentTarget) -> Void,
          refreshRegistrations: @escaping () -> Void, confirm: @escaping (AgentTarget) -> Void,
-         terminate: @escaping (OrphanReport.Row) -> Void = { _ in }) {
+         terminate: @escaping (OrphanReport.Row) -> Void = { _ in },
+         setLaunchAtLogin: @escaping (Bool) -> Void = { _ in },
+         openLoginItemsSettings: @escaping () -> Void = {}) {
         self.data = data
         self.theme = theme
         self.size = size
@@ -59,6 +63,8 @@ final class PanelContent: ObservableObject {
         self.refreshRegistrations = refreshRegistrations
         self.confirm = confirm
         self.terminate = terminate
+        self.setLaunchAtLogin = setLaunchAtLogin
+        self.openLoginItemsSettings = openLoginItemsSettings
     }
 
     func artwork(_ id: EffectID, _ artwork: Artwork) -> some View {
@@ -173,20 +179,60 @@ struct PanelView: View {
     }
 
     private var footer: some View {
-        HStack {
-            Spacer()
-            Button { NSApp.terminate(nil) } label: {
-                HStack(spacing: S.iconGap) {
-                    Text("종료")
-                    Text("⌘Q").font(Theme.TypeRole.data.font).accessibilityHidden(true)
+        let login = screen.launchAtLogin
+        return VStack(alignment: .leading, spacing: S.xs) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: S.md) {
+                    launchAtLoginToggle(login).fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: S.xs)
+                    quitButton.fixedSize(horizontal: true, vertical: false)
+                }
+                VStack(alignment: .leading, spacing: S.xs) {
+                    launchAtLoginToggle(login)
+                    HStack {
+                        Spacer()
+                        quitButton
+                    }
                 }
             }
-            .buttonStyle(PanelButtonStyle(focused: focus == .quit))
-            .focusEffectDisabled()
-            .focused($focus, equals: .quit)
-            .keyboardShortcut("q")
+            if let message = login.message {
+                HStack(alignment: .top, spacing: S.iconGap) {
+                    Glyph(symbol: login.messageIsError ? "xmark.square" : "exclamationmark.triangle",
+                          color: login.messageIsError ? .magenta : .amber)
+                    Text(message)
+                        .foregroundStyle(login.messageIsError ? Ink.magenta.color : content.theme.detail)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if login.offerSettings {
+                    KeyButton(title: "로그인 항목 설정 열기", action: content.openLoginItemsSettings)
+                }
+            }
         }
+        .font(Theme.TypeRole.body.font)
         .padding(.horizontal, S.panelInset)
+    }
+
+    private func launchAtLoginToggle(_ login: LaunchAtLoginState) -> some View {
+        KeyToggle(
+            title: "로그인 시 자동 실행",
+            isOn: Binding(get: { login.isEnabled }, set: content.setLaunchAtLogin),
+            disabled: login.busy
+        )
+        .accessibilityIdentifier("aistats.launchAtLogin")
+        .help("Mac에 로그인할 때 AIStats를 자동으로 실행합니다.")
+    }
+
+    private var quitButton: some View {
+        Button { NSApp.terminate(nil) } label: {
+            HStack(spacing: S.iconGap) {
+                Text("종료")
+                Text("⌘Q").font(Theme.TypeRole.data.font).accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(PanelButtonStyle(focused: focus == .quit))
+        .focusEffectDisabled()
+        .focused($focus, equals: .quit)
+        .keyboardShortcut("q")
     }
 
     private func heading(_ latin: String, _ korean: String) -> some View {
